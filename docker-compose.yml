@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  lotus-web:
+    build: .
+    container_name: lotus-manager-web
+    restart: unless-stopped
+    ports:
+      - "16320:16320"
+    volumes:
+      - lotus-data:/app/web_app/data
+      - lotus-uploads:/app/web_app/static/uploads
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-lotus-vps-secret-2026}
+
+volumes:
+  lotus-data:
+  lotus-uploads:

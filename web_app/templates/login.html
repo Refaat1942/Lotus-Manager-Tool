@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ t('login') }} — {{ t('app_title') }}{% endblock %}
+{% block body %}
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-brand">
+            {% if branding.logo_path %}
+            <img src="{{ branding.logo_path }}" alt="Logo" class="login-logo">
+            {% else %}
+            <div class="login-logo-placeholder">🌿</div>
+            {% endif %}
+            <h1>{{ t('app_title') }}</h1>
+            <p>{{ t('tagline') }}</p>
+        </div>
+        {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="/login" class="login-form">
+            <label>{{ t('username') }}</label>
+            <input type="text" name="username" required autofocus placeholder="admin">
+            <label>{{ t('password') }}</label>
+            <input type="password" name="password" required placeholder="••••">
+            <button type="submit" class="btn btn-primary btn-block">{{ t('sign_in') }}</button>
+        </form>
+        <div class="login-footer">
+            <a href="/api/set-lang/en">English</a>
+            <span>|</span>
+            <a href="/api/set-lang/ar">العربية</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}{{ t('dashboard') }} — {{ t('app_title') }}{% endblock %}
+{% block body %}
+<nav class="navbar">
+    <div class="nav-brand">
+        {% if branding.logo_path %}<img src="{{ branding.logo_path }}" class="nav-logo" alt="">{% endif %}
+        <span>{{ t('app_title') }}</span>
+    </div>
+    <div class="nav-actions">
+        <div class="mode-toggle">
+            <button class="mode-btn active" data-mode="total">{{ t('total_mode') }}</button>
+            <button class="mode-btn" data-mode="daily">{{ t('daily_avg') }}</button>
+        </div>
+        <a href="/api/set-lang/en" class="lang-btn {{ 'active' if lang=='en' else '' }}">EN</a>
+        <a href="/api/set-lang/ar" class="lang-btn {{ 'active' if lang=='ar' else '' }}">AR</a>
+        <button id="themeToggle" class="icon-btn" title="{{ t('dark_mode') }}">🌙</button>
+        {% if session.role == 'admin' %}
+        <a href="/admin" class="btn btn-sm">{{ t('admin_panel') }}</a>
+        {% endif %}
+        <a href="/logout" class="btn btn-sm btn-outline">{{ t('logout') }}</a>
+    </div>
+</nav>
+
+<div class="layout">
+    <aside class="sidebar">
+        <h3>{{ t('dashboard') }}</h3>
+        <div class="upload-section">
+            <label class="btn btn-accent btn-block upload-btn">
+                📂 {{ t('load_data') }}
+                <input type="file" id="dataFile" accept=".xlsx,.xls,.csv" hidden>
+            </label>
+            {% if session.role in ['admin', 'manager'] %}
+            <label class="btn btn-purple btn-block upload-btn">
+                🔐 {{ t('upload_master') }}
+                <input type="file" id="masterFile" accept=".lotusdb" hidden>
+            </label>
+            {% endif %}
+            <div id="uploadStatus" class="status-text"></div>
+        </div>
+
+        <div class="filter-group">
+            <label>{{ t('date_from') }}</label>
+            <input type="date" id="dateFrom">
+            <label>{{ t('date_to') }}</label>
+            <input type="date" id="dateTo">
+        </div>
+
+        <div class="filter-section" id="filterEmployees">
+            <div class="filter-header"><span>{{ t('employees_filter') }}</span>
+                <div><button class="link-btn" data-action="all" data-target="emp">All</button> / <button class="link-btn" data-action="none" data-target="emp">None</button></div>
+            </div>
+            <div class="filter-list" id="empList"></div>
+        </div>
+        <div class="filter-section" id="filterBranches">
+            <div class="filter-header"><span>{{ t('branches_filter') }}</span>
+                <div><button class="link-btn" data-action="all" data-target="branch">All</button> / <button class="link-btn" data-action="none" data-target="branch">None</button></div>
+            </div>
+            <div class="filter-list" id="branchList"></div>
+        </div>
+        <div class="filter-section" id="filterShifts">
+            <div class="filter-header"><span>{{ t('shifts_filter') }}</span></div>
+            <div class="filter-list" id="shiftList"></div>
+        </div>
+        <div class="filter-section" id="filterCategories">
+            <div class="filter-header"><span>{{ t('categories_filter') }}</span></div>
+            <div class="filter-list" id="catList"></div>
+        </div>
+        <div class="filter-section" id="filterMaterials">
+            <div class="filter-header"><span>{{ t('materials_filter') }}</span></div>
+            <div class="filter-list" id="matList"></div>
+        </div>
+
+        <button id="applyFilters" class="btn btn-primary btn-block">{{ t('apply_filters') }}</button>
+    </aside>
+
+    <main class="main-content">
+        <div id="noData" class="empty-state">
+            <div class="empty-icon">📊</div>
+            <h2>{{ t('no_data') }}</h2>
+            <p>{{ t('load_data') }} (XLSX / CSV)</p>
+        </div>
+
+        <div id="dashboardContent" class="hidden">
+            <div class="period-badge" id="periodBadge"></div>
+
+            <div class="kpi-row">
+                <div class="kpi-card" style="--kpi-color: var(--accent)">
+                    <span class="kpi-label">{{ t('total_sales') }}</span>
+                    <span class="kpi-value" id="kpiSales">0</span>
+                </div>
+                <div class="kpi-card" style="--kpi-color: #f1c40f">
+                    <span class="kpi-label">{{ t('total_receipts') }}</span>
+                    <span class="kpi-value" id="kpiReceipts">0</span>
+                </div>
+                <div class="kpi-card" style="--kpi-color: var(--primary)">
+                    <span class="kpi-label">{{ t('avg_receipt') }}</span>
+                    <span class="kpi-value" id="kpiAvg">0</span>
+                </div>
+                <div class="kpi-card" style="--kpi-color: #e74c3c">
+                    <span class="kpi-label">{{ t('total_pieces') }}</span>
+                    <span class="kpi-value" id="kpiPieces">0</span>
+                </div>
+            </div>
+
+            <div class="tabs">
+                <button class="tab active" data-tab="overview">{{ t('overview') }}</button>
+                <button class="tab" data-tab="employees">{{ t('employees') }}</button>
+                <button class="tab" data-tab="products">{{ t('products') }}</button>
+                <button class="tab" data-tab="executive">{{ t('executive') }}</button>
+                <button class="tab" data-tab="stagnant">{{ t('stagnant') }}</button>
+            </div>
+
+            <div class="tab-panel active" id="tab-overview">
+                <div class="charts-grid">
+                    <div class="chart-card"><canvas id="chartMaterial"></canvas></div>
+                    <div class="chart-card"><canvas id="chartHourly"></canvas></div>
+                    <div class="chart-card"><canvas id="chartShift"></canvas></div>
+                    <div class="chart-card"><canvas id="chartCategory"></canvas></div>
+                </div>
+                <div class="table-card">
+                    <h3>{{ t('top_employees') }}</h3>
+                    <div class="table-wrap"><table id="topEmpTable"><thead><tr>
+                        <th>Name</th><th>Branch</th><th>Shift</th><th>Top Type</th><th>Sales</th>
+                    </tr></thead><tbody></tbody></table></div>
+                </div>
+            </div>
+
+            <div class="tab-panel" id="tab-employees">
+                <div class="sub-tabs">
+                    <button class="sub-tab active" data-emode="overview">{{ t('performance_overview') }}</button>
+                    <button class="sub-tab" data-emode="ai">{{ t('ai_recommendations') }}</button>
+                </div>
+                <div class="table-wrap"><table id="empTable"><thead></thead><tbody></tbody></table></div>
+            </div>
+
+            <div class="tab-panel" id="tab-products">
+                <div class="table-wrap"><table id="prodTable"><thead><tr>
+                    <th>Code</th><th>Description</th><th>Category</th><th>Group</th><th>Qty</th><th>Sales</th>
+                </tr></thead><tbody></tbody></table></div>
+            </div>
+
+            <div class="tab-panel" id="tab-executive">
+                <div id="execBrief" class="brief-card"></div>
+                <div class="table-wrap"><table id="execShiftTable"><thead><tr>
+                    <th>Branch</th><th>Shift</th><th>Sales</th><th>Receipts</th><th>Avg</th>
+                </tr></thead><tbody></tbody></table></div>
+            </div>
+
+            <div class="tab-panel" id="tab-stagnant">
+                <button id="analyzeStagnant" class="btn btn-danger">{{ t('analyze_stagnant') }}</button>
+                <div class="table-wrap" style="margin-top:1rem"><table id="stagTable"><thead><tr>
+                    <th>Stagnant Code</th><th>Stagnant Drug</th><th>Alt Code</th><th>Alternative</th><th>Alt Qty</th>
+                </tr></thead><tbody></tbody></table></div>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}
