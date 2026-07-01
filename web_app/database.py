@@ -40,7 +40,7 @@ def init_db():
             primary_color TEXT DEFAULT '#27ae60',
             secondary_color TEXT DEFAULT '#1e8449',
             accent_color TEXT DEFAULT '#3498db',
-            logo_path TEXT DEFAULT ''
+            logo_path TEXT DEFAULT '/static/logo.png'
         );
         CREATE TABLE IF NOT EXISTS master_items (
             Material TEXT, Description TEXT, SubCat1 TEXT,
@@ -59,7 +59,9 @@ def init_db():
         )
     c.execute("SELECT COUNT(*) FROM branding")
     if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO branding (id) VALUES (1)")
+        c.execute("INSERT INTO branding (id, logo_path) VALUES (1, '/static/logo.png')")
+    else:
+        c.execute("UPDATE branding SET logo_path='/static/logo.png' WHERE id=1 AND (logo_path IS NULL OR logo_path='')")
     c.execute("SELECT setting_value FROM security_settings WHERE setting_key='admin_password'")
     if not c.fetchone():
         c.execute("INSERT INTO security_settings VALUES ('admin_password', ?)", (hash_password("admin"),))

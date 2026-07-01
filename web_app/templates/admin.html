@@ -3,8 +3,12 @@
 {% block body %}
 <nav class="navbar">
     <div class="nav-brand">
-        {% if branding.logo_path %}<img src="{{ branding.logo_path }}" class="nav-logo" alt="">{% endif %}
-        <span>{{ t('admin_panel') }}</span>
+        {% if branding.logo_path %}
+        <div class="logo-wrap logo-wrap--nav">
+            <img src="{{ branding.logo_path }}" class="nav-logo logo-animated" alt="">
+        </div>
+        {% endif %}
+        <span class="nav-title">{{ t('admin_panel') }}</span>
     </div>
     <div class="nav-actions">
         <a href="/dashboard" class="btn btn-sm">{{ t('dashboard') }}</a>
@@ -34,7 +38,9 @@
                 <label>{{ t('upload_logo') }}</label>
                 <input type="file" name="logo" accept="image/*">
                 {% if branding.logo_path %}
-                <img src="{{ branding.logo_path }}" class="preview-logo" alt="">
+                <div class="logo-wrap logo-wrap--preview">
+                    <img src="{{ branding.logo_path }}" class="preview-logo logo-animated" alt="">
+                </div>
                 {% endif %}
                 <button type="submit" class="btn btn-primary">{{ t('save') }}</button>
             </form>

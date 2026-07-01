@@ -5,9 +5,11 @@
     <div class="login-card">
         <div class="login-brand">
             {% if branding.logo_path %}
-            <img src="{{ branding.logo_path }}" alt="Logo" class="login-logo">
+            <div class="logo-wrap logo-wrap--login">
+                <img src="{{ branding.logo_path }}" alt="Logo" class="login-logo logo-animated">
+            </div>
             {% else %}
-            <div class="login-logo-placeholder">🌿</div>
+            <div class="login-logo-placeholder logo-animated">🌿</div>
             {% endif %}
             <h1>{{ t('app_title') }}</h1>
             <p>{{ t('tagline') }}</p>

@@ -3,8 +3,12 @@
 {% block body %}
 <nav class="navbar">
     <div class="nav-brand">
-        {% if branding.logo_path %}<img src="{{ branding.logo_path }}" class="nav-logo" alt="">{% endif %}
-        <span>{{ t('app_title') }}</span>
+        {% if branding.logo_path %}
+        <div class="logo-wrap logo-wrap--nav">
+            <img src="{{ branding.logo_path }}" class="nav-logo logo-animated" alt="">
+        </div>
+        {% endif %}
+        <span class="nav-title">{{ t('app_title') }}</span>
     </div>
     <div class="nav-actions">
         <div class="mode-toggle">
