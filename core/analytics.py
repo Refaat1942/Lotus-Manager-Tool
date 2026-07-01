@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from core.utils import fix_arabic, clean_item_code
+from core.utils import web_text, clean_item_code
 
 
 class AnalyticsService:
@@ -18,7 +18,7 @@ class AnalyticsService:
         if df is None or "Item_Type" not in df.columns:
             return {"labels": [], "values": []}
         data = df.groupby("Item_Type")[self.p.c_price].sum().sort_values(ascending=False).head(5) / self.div
-        return {"labels": [fix_arabic(x) for x in data.index], "values": [round(v, 2) for v in data.values]}
+        return {"labels": [web_text(x) for x in data.index], "values": [round(v, 2) for v in data.values]}
 
     def chart_hourly_sales(self):
         df = self.p.df
@@ -32,14 +32,14 @@ class AnalyticsService:
         if df is None or "Shift_Name" not in df.columns:
             return {"labels": [], "values": []}
         data = df.groupby("Shift_Name")[self.p.c_price].sum() / self.div
-        return {"labels": [fix_arabic(x) for x in data.index], "values": [round(v, 2) for v in data.values]}
+        return {"labels": [web_text(x) for x in data.index], "values": [round(v, 2) for v in data.values]}
 
     def chart_category_pie(self):
         df = self.p.df
         if df is None or not self.p.c_cat:
             return {"labels": [], "values": []}
         data = df.groupby(self.p.c_cat)[self.p.c_price].sum()
-        return {"labels": [fix_arabic(x) for x in data.index], "values": [round(v, 2) for v in data.values]}
+        return {"labels": [web_text(x) for x in data.index], "values": [round(v, 2) for v in data.values]}
 
     def top_employees(self, limit=10):
         df = self.p.df
@@ -53,8 +53,8 @@ class AnalyticsService:
             shift = emp_df["Shift_Name"].mode()[0] if "Shift_Name" in emp_df.columns and not emp_df["Shift_Name"].empty else "N/A"
             top_cat = emp_df[self.p.c_cat].mode()[0] if self.p.c_cat and not emp_df[self.p.c_cat].empty else "N/A"
             rows.append({
-                "name": fix_arabic(emp), "branch": fix_arabic(branch),
-                "shift": fix_arabic(shift), "top_type": fix_arabic(top_cat),
+                "name": web_text(emp), "branch": web_text(branch),
+                "shift": web_text(shift), "top_type": web_text(top_cat),
                 "sales": round(val / self.div, 2),
             })
         return rows
@@ -76,9 +76,9 @@ class AnalyticsService:
         for _, row in prod_grp.iterrows():
             rows.append({
                 "code": clean_item_code(row[self.p.c_item_code]) if self.p.c_item_code else "",
-                "description": fix_arabic(row[self.p.c_desc]),
-                "category": fix_arabic(row[self.p.c_cat]) if self.p.c_cat else "N/A",
-                "material_group": fix_arabic(row["Item_Type"]) if "Item_Type" in row else "N/A",
+                "description": web_text(row[self.p.c_desc]),
+                "category": web_text(row[self.p.c_cat]) if self.p.c_cat else "N/A",
+                "material_group": web_text(row["Item_Type"]) if "Item_Type" in row else "N/A",
                 "qty": round(row[self.p.c_qty] / self.div, 2),
                 "sales": round(row[self.p.c_price] / self.div, 2),
             })
@@ -108,8 +108,8 @@ class AnalyticsService:
                 if "Translated_Position" in df.columns:
                     pos = df[df[self.p.c_name] == emp]["Translated_Position"].iloc[0]
                 rows.append({
-                    "employee": fix_arabic(emp), "position": pos,
-                    "shift": fix_arabic(main_shift.get(emp, "")),
+                    "employee": web_text(emp), "position": pos,
+                    "shift": web_text(main_shift.get(emp, "")),
                     "sales": round(row / self.div, 2),
                     "receipts": fmt_rec(emp_rec.get(emp, 0)),
                     "avg_receipt": round(avg_rec.get(emp, 0), 2),
@@ -130,7 +130,7 @@ class AnalyticsService:
                 if not recs:
                     recs.append("Steady performance.")
                 rows.append({
-                    "employee": fix_arabic(emp), "shift": fix_arabic(row["Shift"]),
+                    "employee": web_text(emp), "shift": web_text(row["Shift"]),
                     "tier": tier, "materials_per_receipt": round(row["MatPerRec"], 2),
                     "recommendation": " | ".join(recs),
                 })
@@ -143,7 +143,7 @@ class AnalyticsService:
         result = {"best_shift": "N/A", "peak_hours": [], "shifts_by_branch": [], "pharmacists": []}
         if "Shift_Name" in df.columns:
             try:
-                result["best_shift"] = fix_arabic(df.groupby("Shift_Name")[self.p.c_price].sum().idxmax())
+                result["best_shift"] = web_text(df.groupby("Shift_Name")[self.p.c_price].sum().idxmax())
             except Exception:
                 pass
         if "Sale_Hour" in df.columns:
@@ -158,8 +158,8 @@ class AnalyticsService:
             for _, row in shift_grp.iterrows():
                 recs = row[rec_col] if row[rec_col] > 0 else 1
                 result["shifts_by_branch"].append({
-                    "branch": fix_arabic(row[self.p.c_branch]),
-                    "shift": fix_arabic(row["Shift_Name"]),
+                    "branch": web_text(row[self.p.c_branch]),
+                    "shift": web_text(row["Shift_Name"]),
                     "sales": round(row[self.p.c_price] / self.div, 2),
                     "receipts": round(row[rec_col] / self.div, 1) if self._daily else int(row[rec_col]),
                     "avg_receipt": round(row[self.p.c_price] / recs, 2),
@@ -185,9 +185,9 @@ class AnalyticsService:
             for _, row in stagnant_items.iterrows():
                 rows.append({
                     "stagnant_code": clean_item_code(row["Material"]),
-                    "stagnant_drug": fix_arabic(row["Description"]),
+                    "stagnant_drug": web_text(row["Description"]),
                     "alt_code": clean_item_code(top_seller["Material"]),
-                    "alt_drug": fix_arabic(top_seller["Description"]),
+                    "alt_drug": web_text(top_seller["Description"]),
                     "alt_qty": int(top_seller["Qty_Sold"]),
                 })
         return rows

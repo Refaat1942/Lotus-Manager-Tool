@@ -87,7 +87,7 @@ a { color: var(--accent); text-decoration: none; }
 }
 
 .logo-wrap--nav .logo-animated {
-    animation: logoEnter 0.5s ease-out, logoFloat 4s ease-in-out 0.5s infinite;
+    animation: logoEnter 0.5s ease-out;
 }
 
 /* Login */
@@ -199,11 +199,28 @@ a { color: var(--accent); text-decoration: none; }
     background: linear-gradient(90deg, var(--secondary), var(--primary));
     color: white;
     padding: 0 1.5rem;
-    min-height: 72px;
+    min-height: 80px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     box-shadow: var(--shadow);
+}
+
+.logo-wrap--nav {
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 6px 10px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+    flex-shrink: 0;
+}
+
+.logo-wrap--nav .nav-logo {
+    height: 62px;
+    width: auto;
+    max-width: 140px;
+    object-fit: contain;
+    animation: logoEnter 0.5s ease-out;
+    filter: none;
 }
 
 .nav-brand {
@@ -213,9 +230,10 @@ a { color: var(--accent); text-decoration: none; }
 }
 
 .nav-title {
-    font-size: 1.35rem;
+    font-size: 1.4rem;
     font-weight: 800;
     letter-spacing: -0.02em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .nav-logo {
@@ -267,7 +285,7 @@ a { color: var(--accent); text-decoration: none; }
 }
 
 /* Layout */
-.layout { display: flex; min-height: calc(100vh - 72px); }
+.layout { display: flex; min-height: calc(100vh - 80px); }
 
 .sidebar {
     width: 290px;
@@ -459,6 +477,13 @@ td {
     padding: 0.6rem 0.9rem;
     border-bottom: 1px solid var(--border);
     line-height: 1.45;
+    unicode-bidi: plaintext;
+}
+
+.filter-list label span,
+.ar-text {
+    unicode-bidi: plaintext;
+    direction: auto;
 }
 
 tr:hover td { background: rgba(39,174,96,0.05); }

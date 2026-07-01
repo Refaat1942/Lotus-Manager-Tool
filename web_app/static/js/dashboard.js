@@ -6,12 +6,22 @@ function fmt(n) {
     return Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s ?? '';
+    return d.innerHTML;
+}
+
+function arCell(v) {
+    return `<td dir="auto">${esc(v)}</td>`;
+}
+
 function buildFilterList(containerId, items, prefix) {
     const el = document.getElementById(containerId);
     el.innerHTML = '';
     (items || []).forEach(v => {
         const id = `${prefix}_${v.replace(/\W/g, '_')}`;
-        el.innerHTML += `<label><input type="checkbox" checked data-filter="${prefix}" value="${v.replace(/"/g, '&quot;')}" id="${id}"> ${v}</label>`;
+        el.innerHTML += `<label><input type="checkbox" checked data-filter="${prefix}" value="${esc(v)}" id="${id}"> <span dir="auto">${esc(v)}</span></label>`;
     });
 }
 
@@ -54,28 +64,28 @@ function renderDashboard(data) {
     drawChart('chartCategory', 'doughnut', data.category_chart.labels, data.category_chart.values, 'Categories');
 
     fillTable('topEmpTable', data.top_employees, r =>
-        `<tr><td>${r.name}</td><td>${r.branch}</td><td>${r.shift}</td><td>${r.top_type}</td><td>${fmt(r.sales)}</td></tr>`);
+        `<tr>${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${arCell(r.top_type)}<td>${fmt(r.sales)}</td></tr>`);
 
     renderEmployees('overview', data.employee_overview);
     fillTable('prodTable', data.top_products, r =>
-        `<tr><td>${r.code}</td><td>${r.description}</td><td>${r.category}</td><td>${r.material_group}</td><td>${fmt(r.qty)}</td><td>${fmt(r.sales)}</td></tr>`);
+        `<tr><td>${esc(r.code)}</td>${arCell(r.description)}${arCell(r.category)}${arCell(r.material_group)}<td>${fmt(r.qty)}</td><td>${fmt(r.sales)}</td></tr>`);
 
     const ex = data.executive;
     document.getElementById('execBrief').innerHTML =
-        `<strong>⭐ Top Shift:</strong> ${ex.best_shift}<br><strong>🔥 Peak Hours:</strong> ${(ex.peak_hours || []).join(' & ') || 'N/A'}`;
+        `<strong>⭐ Top Shift:</strong> <span dir="auto">${esc(ex.best_shift)}</span><br><strong>🔥 Peak Hours:</strong> ${esc((ex.peak_hours || []).join(' & ') || 'N/A')}`;
     fillTable('execShiftTable', ex.shifts_by_branch, r =>
-        `<tr><td>${r.branch}</td><td>${r.shift}</td><td>${fmt(r.sales)}</td><td>${r.receipts}</td><td>${fmt(r.avg_receipt)}</td></tr>`);
+        `<tr>${arCell(r.branch)}${arCell(r.shift)}<td>${fmt(r.sales)}</td><td>${r.receipts}</td><td>${fmt(r.avg_receipt)}</td></tr>`);
 }
 
 function renderEmployees(mode, rows) {
     const tbody = document.querySelector('#empTable tbody');
     if (mode === 'overview') {
         tbody.innerHTML = rows.map(r =>
-            `<tr><td>${r.employee}</td><td>${r.position}</td><td>${r.shift}</td><td>${fmt(r.sales)}</td><td>${r.receipts}</td><td>${fmt(r.avg_receipt)}</td><td>${r.materials_per_receipt}</td></tr>`
+            `<tr>${arCell(r.employee)}${arCell(r.position)}${arCell(r.shift)}<td>${fmt(r.sales)}</td><td>${r.receipts}</td><td>${fmt(r.avg_receipt)}</td><td>${r.materials_per_receipt}</td></tr>`
         ).join('');
     } else {
         tbody.innerHTML = rows.map(r =>
-            `<tr><td>${r.employee}</td><td>${r.shift}</td><td>${r.tier}</td><td>${r.materials_per_receipt}</td><td>${r.recommendation}</td></tr>`
+            `<tr>${arCell(r.employee)}${arCell(r.shift)}<td>${esc(r.tier)}</td><td>${r.materials_per_receipt}</td>${arCell(r.recommendation)}</tr>`
         ).join('');
     }
 }
@@ -197,7 +207,7 @@ document.getElementById('analyzeStagnant')?.addEventListener('click', async () =
     const res = await fetch('/api/stagnant');
     const data = await res.json();
     fillTable('stagTable', data.rows, r =>
-        `<tr><td>${r.stagnant_code}</td><td>${r.stagnant_drug}</td><td>${r.alt_code}</td><td>${r.alt_drug}</td><td>${r.alt_qty}</td></tr>`);
+        `<tr><td>${esc(r.stagnant_code)}</td>${arCell(r.stagnant_drug)}<td>${esc(r.alt_code)}</td>${arCell(r.alt_drug)}<td>${r.alt_qty}</td></tr>`);
 });
 
 document.querySelectorAll('.link-btn').forEach(btn => {

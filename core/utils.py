@@ -8,10 +8,18 @@ SECRET_SALT = "LOTUS_PHARMA_2026_SUPER_SECRET_KEY"
 
 
 def fix_arabic(text):
+    """For desktop/tkinter — reshapes and applies bidi."""
     if pd.isna(text):
         return ""
     reshaped_text = arabic_reshaper.reshape(str(text))
     return get_display(reshaped_text)
+
+
+def web_text(text):
+    """For web/HTML — return raw UTF-8; browser handles Arabic shaping & RTL."""
+    if pd.isna(text):
+        return ""
+    return str(text).strip()
 
 
 def safe_label(text):
