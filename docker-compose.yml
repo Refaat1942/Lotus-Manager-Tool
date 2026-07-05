@@ -2,7 +2,6 @@ version: "3.8"
 
 services:
   lotus-web:
-    build: .
     build:
       context: .
       args:
