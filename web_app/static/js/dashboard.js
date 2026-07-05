@@ -1,6 +1,6 @@
 let charts = {};
 let dailyAvg = false;
-let filterState = {};
+const L = window.TABLE_LABELS || {};
 
 function fmt(n) {
     return Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -12,8 +12,78 @@ function esc(s) {
     return d.innerHTML;
 }
 
+function numCell(v) {
+    return `<td class="cell-center">${esc(v)}</td>`;
+}
+
 function arCell(v) {
-    return `<td dir="auto">${esc(v)}</td>`;
+    return `<td class="cell-center" dir="auto">${esc(v)}</td>`;
+}
+
+function rankCell(n) {
+    return `<td class="cell-center cell-rank">${n}</td>`;
+}
+
+const TABLE_COLUMNS = {
+    topEmpTable: ['rank', 'name', 'branch', 'shift', 'top_type', 'sales'],
+    empOverview: ['rank', 'employee', 'position', 'shift', 'sales', 'receipts', 'avg_receipt', 'materials_per_receipt'],
+    empAi: ['rank', 'employee', 'shift', 'tier', 'materials_per_receipt', 'recommendation'],
+    prodTable: ['code', 'description', 'category', 'group', 'qty', 'sales'],
+    execShiftTable: ['branch', 'shift', 'sales', 'receipts', 'avg'],
+    stagTable: ['stagnant_code', 'stagnant_drug', 'alt_code', 'alternative', 'alt_qty'],
+};
+
+function buildTableHeader(tableId, columnKeys) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const labels = columnKeys.map(k => L[k] || k);
+    table.innerHTML = `<thead><tr>${labels.map(l => `<th class="sortable">${esc(l)}</th>`).join('')}</tr></thead><tbody></tbody>`;
+    ensureSortable(table);
+}
+
+function ensureSortable(table) {
+    if (!table || table.dataset.sortBound === '1') return;
+    table.dataset.sortBound = '1';
+    table.addEventListener('click', e => {
+        const th = e.target.closest('th.sortable');
+        if (!th || !table.contains(th)) return;
+        const colIndex = [...th.parentNode.children].indexOf(th);
+        sortTable(table, colIndex, th);
+    });
+}
+
+function initSortableTable(table) {
+    ensureSortable(table);
+}
+
+function sortTable(table, colIndex, th) {
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const asc = th.dataset.sort !== 'asc';
+    table.querySelectorAll('th').forEach(h => {
+        h.classList.remove('sort-asc', 'sort-desc');
+        h.dataset.sort = '';
+    });
+    th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+    th.dataset.sort = asc ? 'asc' : 'desc';
+
+    rows.sort((a, b) => {
+        const va = a.cells[colIndex]?.textContent.trim() || '';
+        const vb = b.cells[colIndex]?.textContent.trim() || '';
+        const na = parseFloat(va.replace(/,/g, '').replace(/[^\d.-]/g, ''));
+        const nb = parseFloat(vb.replace(/,/g, '').replace(/[^\d.-]/g, ''));
+        if (!isNaN(na) && !isNaN(nb) && (va !== '' || vb !== '')) {
+            return asc ? na - nb : nb - na;
+        }
+        return asc ? va.localeCompare(vb, undefined, { numeric: true }) : vb.localeCompare(va, undefined, { numeric: true });
+    });
+    rows.forEach(r => tbody.appendChild(r));
+}
+
+function fillTable(id, rows, fn) {
+    const tbody = document.querySelector(`#${id} tbody`);
+    if (!tbody) return;
+    tbody.innerHTML = (rows || []).map(fn).join('');
 }
 
 function buildFilterList(containerId, items, prefix) {
@@ -63,36 +133,33 @@ function renderDashboard(data) {
     drawChart('chartShift', 'bar', data.shift_chart.labels, data.shift_chart.values, 'Shift Sales');
     drawChart('chartCategory', 'doughnut', data.category_chart.labels, data.category_chart.values, 'Categories');
 
-    fillTable('topEmpTable', data.top_employees, r =>
-        `<tr>${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${arCell(r.top_type)}<td>${fmt(r.sales)}</td></tr>`);
+    fillTable('topEmpTable', data.top_employees, (r, i) =>
+        `<tr>${rankCell(i + 1)}${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${arCell(r.top_type)}${numCell(fmt(r.sales))}</tr>`);
 
     renderEmployees('overview', data.employee_overview);
     fillTable('prodTable', data.top_products, r =>
-        `<tr><td>${esc(r.code)}</td>${arCell(r.description)}${arCell(r.category)}${arCell(r.material_group)}<td>${fmt(r.qty)}</td><td>${fmt(r.sales)}</td></tr>`);
+        `<tr>${numCell(r.code)}${arCell(r.description)}${arCell(r.category)}${arCell(r.material_group)}${numCell(fmt(r.qty))}${numCell(fmt(r.sales))}</tr>`);
 
     const ex = data.executive;
     document.getElementById('execBrief').innerHTML =
         `<strong>⭐ Top Shift:</strong> <span dir="auto">${esc(ex.best_shift)}</span><br><strong>🔥 Peak Hours:</strong> ${esc((ex.peak_hours || []).join(' & ') || 'N/A')}`;
     fillTable('execShiftTable', ex.shifts_by_branch, r =>
-        `<tr>${arCell(r.branch)}${arCell(r.shift)}<td>${fmt(r.sales)}</td><td>${r.receipts}</td><td>${fmt(r.avg_receipt)}</td></tr>`);
+        `<tr>${arCell(r.branch)}${arCell(r.shift)}${numCell(fmt(r.sales))}${numCell(r.receipts)}${numCell(fmt(r.avg_receipt))}</tr>`);
 }
 
 function renderEmployees(mode, rows) {
+    const cols = mode === 'ai' ? TABLE_COLUMNS.empAi : TABLE_COLUMNS.empOverview;
+    buildTableHeader('empTable', cols);
     const tbody = document.querySelector('#empTable tbody');
     if (mode === 'overview') {
-        tbody.innerHTML = rows.map(r =>
-            `<tr>${arCell(r.employee)}${arCell(r.position)}${arCell(r.shift)}<td>${fmt(r.sales)}</td><td>${r.receipts}</td><td>${fmt(r.avg_receipt)}</td><td>${r.materials_per_receipt}</td></tr>`
+        tbody.innerHTML = (rows || []).map((r, i) =>
+            `<tr>${rankCell(i + 1)}${arCell(r.employee)}${arCell(r.position)}${arCell(r.shift)}${numCell(fmt(r.sales))}${numCell(r.receipts)}${numCell(fmt(r.avg_receipt))}${numCell(r.materials_per_receipt)}</tr>`
         ).join('');
     } else {
-        tbody.innerHTML = rows.map(r =>
-            `<tr>${arCell(r.employee)}${arCell(r.shift)}<td>${esc(r.tier)}</td><td>${r.materials_per_receipt}</td>${arCell(r.recommendation)}</tr>`
+        tbody.innerHTML = (rows || []).map((r, i) =>
+            `<tr>${rankCell(i + 1)}${arCell(r.employee)}${arCell(r.shift)}${numCell(r.tier)}${numCell(r.materials_per_receipt)}${arCell(r.recommendation)}</tr>`
         ).join('');
     }
-}
-
-function fillTable(id, rows, fn) {
-    const tbody = document.querySelector(`#${id} tbody`);
-    tbody.innerHTML = (rows || []).map(fn).join('');
 }
 
 function drawChart(canvasId, type, labels, values, label) {
@@ -121,7 +188,16 @@ async function refreshDashboard() {
     if (data.ok) renderDashboard(data.data);
 }
 
+function initAllTableHeaders() {
+    buildTableHeader('topEmpTable', TABLE_COLUMNS.topEmpTable);
+    buildTableHeader('empTable', TABLE_COLUMNS.empOverview);
+    buildTableHeader('prodTable', TABLE_COLUMNS.prodTable);
+    buildTableHeader('execShiftTable', TABLE_COLUMNS.execShiftTable);
+    buildTableHeader('stagTable', TABLE_COLUMNS.stagTable);
+}
+
 async function loadInitial() {
+    initAllTableHeaders();
     const res = await fetch('/api/dashboard-data');
     const data = await res.json();
     if (data.has_data) {
@@ -204,10 +280,11 @@ document.querySelectorAll('.sub-tab').forEach(tab => {
 });
 
 document.getElementById('analyzeStagnant')?.addEventListener('click', async () => {
+    buildTableHeader('stagTable', TABLE_COLUMNS.stagTable);
     const res = await fetch('/api/stagnant');
     const data = await res.json();
     fillTable('stagTable', data.rows, r =>
-        `<tr><td>${esc(r.stagnant_code)}</td>${arCell(r.stagnant_drug)}<td>${esc(r.alt_code)}</td>${arCell(r.alt_drug)}<td>${r.alt_qty}</td></tr>`);
+        `<tr>${numCell(r.stagnant_code)}${arCell(r.stagnant_drug)}${numCell(r.alt_code)}${arCell(r.alt_drug)}${numCell(r.alt_qty)}</tr>`);
 });
 
 document.querySelectorAll('.link-btn').forEach(btn => {

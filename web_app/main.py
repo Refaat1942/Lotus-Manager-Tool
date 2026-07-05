@@ -18,6 +18,7 @@ from core.utils import decrypt_master_file
 from core.analytics import AnalyticsService
 
 BASE_DIR = Path(__file__).resolve().parent
+APP_VERSION = os.environ.get("APP_VERSION", "20260705.1")
 app = FastAPI(title="Lotus Manager Tool Web")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "lotus-web-secret-change-me-2026"))
 
@@ -38,6 +39,7 @@ def ctx(request: Request, **extra):
         "branding": branding,
         "session": session,
         "t": lambda k: t(lang, k, branding),
+        "app_version": APP_VERSION,
         **extra,
     }
 

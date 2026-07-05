@@ -3,6 +3,10 @@ version: "3.8"
 services:
   lotus-web:
     build: .
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-latest}
     container_name: lotus-manager-web
     restart: unless-stopped
     ports:
@@ -12,6 +16,7 @@ services:
       - lotus-uploads:/app/web_app/static/uploads
     environment:
       - SECRET_KEY=${SECRET_KEY:-lotus-vps-secret-2026}
+      - APP_VERSION=${APP_VERSION:-latest}
 
 volumes:
   lotus-data:

@@ -51,13 +51,13 @@
 
         <div class="filter-section" id="filterEmployees">
             <div class="filter-header"><span>{{ t('employees_filter') }}</span>
-                <div><button class="link-btn" data-action="all" data-target="emp">All</button> / <button class="link-btn" data-action="none" data-target="emp">None</button></div>
+                <div><button class="link-btn" data-action="all" data-target="emp">{{ t('select_all') }}</button> / <button class="link-btn" data-action="none" data-target="emp">{{ t('select_none') }}</button></div>
             </div>
             <div class="filter-list" id="empList"></div>
         </div>
         <div class="filter-section" id="filterBranches">
             <div class="filter-header"><span>{{ t('branches_filter') }}</span>
-                <div><button class="link-btn" data-action="all" data-target="branch">All</button> / <button class="link-btn" data-action="none" data-target="branch">None</button></div>
+                <div><button class="link-btn" data-action="all" data-target="branch">{{ t('select_all') }}</button> / <button class="link-btn" data-action="none" data-target="branch">{{ t('select_none') }}</button></div>
             </div>
             <div class="filter-list" id="branchList"></div>
         </div>
@@ -123,9 +123,9 @@
                 </div>
                 <div class="table-card">
                     <h3>{{ t('top_employees') }}</h3>
-                    <div class="table-wrap"><table id="topEmpTable"><thead><tr>
-                        <th>Name</th><th>Branch</th><th>Shift</th><th>Top Type</th><th>Sales</th>
-                    </tr></thead><tbody></tbody></table></div>
+                    <div class="table-wrap">
+                        <table id="topEmpTable" class="data-table"></table>
+                    </div>
                 </div>
             </div>
 
@@ -134,32 +134,62 @@
                     <button class="sub-tab active" data-emode="overview">{{ t('performance_overview') }}</button>
                     <button class="sub-tab" data-emode="ai">{{ t('ai_recommendations') }}</button>
                 </div>
-                <div class="table-wrap"><table id="empTable"><thead></thead><tbody></tbody></table></div>
+                <div class="table-wrap">
+                    <table id="empTable" class="data-table"></table>
+                </div>
             </div>
 
             <div class="tab-panel" id="tab-products">
-                <div class="table-wrap"><table id="prodTable"><thead><tr>
-                    <th>Code</th><th>Description</th><th>Category</th><th>Group</th><th>Qty</th><th>Sales</th>
-                </tr></thead><tbody></tbody></table></div>
+                <div class="table-wrap">
+                    <table id="prodTable" class="data-table"></table>
+                </div>
             </div>
 
             <div class="tab-panel" id="tab-executive">
                 <div id="execBrief" class="brief-card"></div>
-                <div class="table-wrap"><table id="execShiftTable"><thead><tr>
-                    <th>Branch</th><th>Shift</th><th>Sales</th><th>Receipts</th><th>Avg</th>
-                </tr></thead><tbody></tbody></table></div>
+                <div class="table-wrap">
+                    <table id="execShiftTable" class="data-table"></table>
+                </div>
             </div>
 
             <div class="tab-panel" id="tab-stagnant">
                 <button id="analyzeStagnant" class="btn btn-danger">{{ t('analyze_stagnant') }}</button>
-                <div class="table-wrap" style="margin-top:1rem"><table id="stagTable"><thead><tr>
-                    <th>Stagnant Code</th><th>Stagnant Drug</th><th>Alt Code</th><th>Alternative</th><th>Alt Qty</th>
-                </tr></thead><tbody></tbody></table></div>
+                <div class="table-wrap" style="margin-top:1rem">
+                    <table id="stagTable" class="data-table"></table>
+                </div>
             </div>
         </div>
     </main>
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/dashboard.js"></script>
+<script>
+window.TABLE_LABELS = {
+    rank: {{ t('col_rank')|tojson }},
+    name: {{ t('col_name')|tojson }},
+    employee: {{ t('col_employee')|tojson }},
+    branch: {{ t('col_branch')|tojson }},
+    shift: {{ t('col_shift')|tojson }},
+    top_type: {{ t('col_top_type')|tojson }},
+    sales: {{ t('col_sales')|tojson }},
+    position: {{ t('col_position')|tojson }},
+    receipts: {{ t('col_receipts')|tojson }},
+    avg_receipt: {{ t('col_avg_receipt')|tojson }},
+    materials_per_receipt: {{ t('col_materials_per_receipt')|tojson }},
+    code: {{ t('col_code')|tojson }},
+    description: {{ t('col_description')|tojson }},
+    category: {{ t('col_category')|tojson }},
+    group: {{ t('col_group')|tojson }},
+    qty: {{ t('col_qty')|tojson }},
+    tier: {{ t('col_tier')|tojson }},
+    recommendation: {{ t('col_recommendation')|tojson }},
+    avg: {{ t('col_avg')|tojson }},
+    stagnant_code: {{ t('col_stagnant_code')|tojson }},
+    stagnant_drug: {{ t('col_stagnant_drug')|tojson }},
+    alt_code: {{ t('col_alt_code')|tojson }},
+    alternative: {{ t('col_alternative')|tojson }},
+    alt_qty: {{ t('col_alt_qty')|tojson }}
+};
+</script>
+<script src="/static/js/dashboard.js?v={{ app_version }}"></script>
 {% endblock %}

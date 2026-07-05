@@ -463,11 +463,47 @@ table {
     font-size: 0.92rem;
 }
 
+.data-table th,
+.data-table td {
+    text-align: center;
+    vertical-align: middle;
+}
+
+.data-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    padding-inline-end: 1.4rem;
+}
+
+.data-table th.sortable::after {
+    content: '⇅';
+    position: absolute;
+    inset-inline-end: 0.45rem;
+    opacity: 0.45;
+    font-size: 0.75rem;
+}
+
+.data-table th.sort-asc::after {
+    content: '▲';
+    opacity: 1;
+}
+
+.data-table th.sort-desc::after {
+    content: '▼';
+    opacity: 1;
+}
+
+.cell-rank {
+    font-weight: 800;
+    color: var(--primary);
+    width: 48px;
+}
+
 th {
     background: var(--secondary);
     color: white;
     padding: 0.7rem 0.9rem;
-    text-align: start;
     white-space: nowrap;
     font-weight: 700;
     font-size: 0.9rem;
