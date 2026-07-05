@@ -195,7 +195,8 @@ class AnalyticsService:
                     r[f"cat_{i}"] = round(row[c] / self.div, 2)
                 rows.append(r)
             cols = ["employee", "shift", "receipts", "sales", "materials_per_receipt"] + [f"cat_{i}" for i in range(len(sale_types))]
-            return {"columns": cols, "column_labels": ["employee", "shift", "receipts", "sales", "materials_per_receipt"] + sale_types, "rows": rows}
+            base_labels = ["employee", "shift", "receipts", "sales", "materials_per_receipt"]
+            return {"columns": cols, "column_labels": base_labels + sale_types, "rows": rows}
 
         if mode == "subcategories":
             temp_df = df.copy()
@@ -210,9 +211,10 @@ class AnalyticsService:
                 temp_df["SubCat1"] = temp_df["Item_Type"] if "Item_Type" in temp_df.columns else "Uncategorized"
                 temp_df["SubCat2"] = "N/A"
             rec_col = "True_Receipt_ID" if "True_Receipt_ID" in temp_df.columns else self.p.c_rec
-            sub_grp = temp_df.groupby([self.p.c_name, "SubCat1", "SubCat2"]).agg({
-                self.p.c_price: "sum", self.p.c_qty: "sum", rec_col: "nunique"
-            }).reset_index()
+            agg = {self.p.c_price: "sum", self.p.c_qty: "sum"}
+            if rec_col:
+                agg[rec_col] = "nunique"
+            sub_grp = temp_df.groupby([self.p.c_name, "SubCat1", "SubCat2"]).agg(agg).reset_index()
             sub_grp = sub_grp[sub_grp[self.p.c_price] > 0].sort_values(by=[self.p.c_name, self.p.c_price], ascending=[True, False])
             rows = []
             for _, row in sub_grp.iterrows():
@@ -225,7 +227,7 @@ class AnalyticsService:
                     "sales": round(row[self.p.c_price] / self.div, 2),
                     "sales_pct": f"{pct:.1f} %",
                     "materials": round(row[self.p.c_qty] / self.div, 1) if self._daily else int(row[self.p.c_qty]),
-                    "receipts": self._fmt_rec(row[rec_col]),
+                    "receipts": self._fmt_rec(row[rec_col]) if rec_col and rec_col in row.index else "N/A",
                 })
             return {"columns": ["employee", "subcat1", "subcat2", "sales", "sales_pct", "materials", "receipts"], "rows": rows}
 

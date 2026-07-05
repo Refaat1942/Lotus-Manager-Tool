@@ -20,7 +20,7 @@ from core.utils import decrypt_master_file
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
-APP_VERSION = os.environ.get("APP_VERSION", "20260705.3")
+APP_VERSION = os.environ.get("APP_VERSION", "20260705.5")
 app = FastAPI(title="Lotus Manager Tool Web")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "lotus-web-secret-change-me-2026"))
 
@@ -160,8 +160,11 @@ async def employee_mode(mode: str, request: Request):
             return JSONResponse({"ok": False, "error": "Password required for subcategories analysis"}, status_code=403)
     state["analytics"].set_divisor(state["daily_avg"])
     master_df = get_master_df() if mode == "subcategories" else None
-    data = state["analytics"].employee_performance(mode, master_df)
-    return JSONResponse({"ok": True, "data": data})
+    try:
+        data = state["analytics"].employee_performance(mode, master_df)
+        return JSONResponse({"ok": True, "data": data})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 @app.post("/api/date-compare")

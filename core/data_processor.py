@@ -19,7 +19,7 @@ class DataProcessor:
         self.c_qty = get_col(df, ["Quantity Dimenions", "Quantity Dimensions", "Quantity", "Qty", "Total Qty"])
         self.c_name = get_col(df, ["Full Name", "Employee Name", "Name", "Salespers."])
         self.c_cat = get_col(df, ["Z Customer Group", "Sales Type", "Customer Group"])
-        self.c_rec = get_col(df, ["Reciept.No", "Receipt Number", "Trans.", "Invoice"])
+        self.c_rec = get_col(df, ["Reciept.No", "Receipt Number", "Receipt No", "Receipt No.", "Trans.", "Invoice"])
         self.c_mat = get_col(df, ["Mat.Group", "Material Group", "Mat Group", "MatGrp", "Category", "مجموعة الأصناف", "المجموعة", "التصنيف", "Item_Type"])
         self.c_desc = get_col(df, ["Material Description", "Material", "Item", "Description", "الصنف"])
         self.c_time = get_col(df, ["Time", "Hour of sale"])

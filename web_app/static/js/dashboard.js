@@ -1,6 +1,8 @@
 let charts = {};
 let dailyAvg = false;
 let validDates = [];
+let activeEmpMode = 'overview';
+let lastDashboardData = null;
 const L = window.TABLE_LABELS || {};
 
 const STATIC_TABLES = {
@@ -14,11 +16,11 @@ const STATIC_TABLES = {
 };
 
 const EMP_MODES = {
-    overview: { api: null, rank: true },
-    sales_types: { api: 'sales_types', rank: true },
+    overview: { api: null, rank: true, cache: 'employee_overview' },
+    sales_types: { api: 'sales_types', rank: true, cache: 'employee_sales_types' },
     subcategories: { api: 'subcategories', rank: false, password: true },
-    efficiency: { api: 'efficiency', rank: false },
-    ai: { api: 'ai', rank: true },
+    efficiency: { api: 'efficiency', rank: false, cache: 'employee_efficiency' },
+    ai: { api: 'ai', rank: true, cache: 'employee_ai' },
 };
 
 function fmt(n) {
@@ -75,7 +77,16 @@ function fillTable(id, rows, fn) {
 
 function renderDynamicTable(tableId, payload, withRank) {
     const cols = payload.columns || [];
-    const labels = payload.column_labels || cols.map(c => lbl(c));
+    let labels;
+    if (payload.column_labels && payload.column_labels.length === cols.length) {
+        labels = payload.column_labels.map((text, i) => {
+            const key = cols[i];
+            if (key && key.startsWith('cat_')) return text;
+            return lbl(key) || text;
+        });
+    } else {
+        labels = cols.map(c => lbl(c));
+    }
     if (withRank) {
         buildTableHeader(tableId, ['rank', ...cols], [lbl('rank'), ...labels]);
     } else {
@@ -151,8 +162,10 @@ function renderDashboard(data) {
     if (!data.has_data) {
         document.getElementById('noData').classList.remove('hidden');
         document.getElementById('dashboardContent').classList.add('hidden');
+        lastDashboardData = null;
         return;
     }
+    lastDashboardData = data;
     document.getElementById('noData').classList.add('hidden');
     document.getElementById('dashboardContent').classList.remove('hidden');
     validDates = data.valid_dates || [];
@@ -201,20 +214,42 @@ function renderDashboard(data) {
 async function loadEmployeeMode(mode, password) {
     const cfg = EMP_MODES[mode];
     if (!cfg) return;
+    activeEmpMode = mode;
+
+    if (mode !== 'subcategories' && lastDashboardData && cfg.cache && lastDashboardData[cfg.cache]) {
+        renderDynamicTable('empTable', lastDashboardData[cfg.cache], cfg.rank);
+        return;
+    }
+
     if (cfg.api === null) {
         const res = await fetch('/api/dashboard-data');
         const data = await res.json();
+        if (!data.has_data) return;
+        lastDashboardData = data;
         renderDynamicTable('empTable', data.employee_overview, true);
         return;
     }
-    const res = await fetch(`/api/employee/${cfg.api}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: password || '' }),
-    });
-    const json = await res.json();
-    if (!json.ok) { alert(json.error || 'Access denied'); return; }
-    renderDynamicTable('empTable', json.data, cfg.rank);
+    try {
+        const res = await fetch(`/api/employee/${cfg.api}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: password || '' }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+            alert(json.error || json.detail || 'Failed to load employee data');
+            document.querySelectorAll('.sub-tab').forEach(t =>
+                t.classList.toggle('active', t.dataset.emode === 'overview'));
+            activeEmpMode = 'overview';
+            if (lastDashboardData?.employee_overview) {
+                renderDynamicTable('empTable', lastDashboardData.employee_overview, true);
+            }
+            return;
+        }
+        renderDynamicTable('empTable', json.data, cfg.rank);
+    } catch (err) {
+        alert('Failed to load employee data: ' + err.message);
+    }
 }
 
 async function applyLoadedOptions(options) {
@@ -231,13 +266,29 @@ async function applyLoadedOptions(options) {
 }
 
 async function refreshDashboard() {
+    const savedEmpMode = document.querySelector('.sub-tab.active')?.dataset.emode || activeEmpMode || 'overview';
     const res = await fetch('/api/filters', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filters: collectFilters(), daily_avg: dailyAvg }),
     });
     const data = await res.json();
-    if (data.ok) renderDashboard(data.data);
+    if (data.ok) {
+        renderDashboard(data.data);
+        if (savedEmpMode === 'subcategories') {
+            document.querySelectorAll('.sub-tab').forEach(t =>
+                t.classList.toggle('active', t.dataset.emode === 'overview'));
+            activeEmpMode = 'overview';
+            return;
+        }
+        if (savedEmpMode !== 'overview') {
+            document.querySelectorAll('.sub-tab').forEach(t =>
+                t.classList.toggle('active', t.dataset.emode === savedEmpMode));
+            await loadEmployeeMode(savedEmpMode);
+        } else {
+            activeEmpMode = 'overview';
+        }
+    }
 }
 
 async function runDateCompare() {
