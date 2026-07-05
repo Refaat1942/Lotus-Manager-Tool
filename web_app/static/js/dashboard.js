@@ -21,7 +21,11 @@ const EMP_MODES = {
     ai: { api: 'ai', rank: true },
 };
 
-function fmt(n) { return Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 }); }
+function fmt(n) {
+    const v = Number(n);
+    if (n == null || Number.isNaN(v)) return '0';
+    return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function lbl(k) { return L[k] || k; }
 function numCell(v) { return `<td class="cell-center">${esc(v)}</td>`; }
@@ -213,6 +217,19 @@ async function loadEmployeeMode(mode, password) {
     renderDynamicTable('empTable', json.data, cfg.rank);
 }
 
+async function applyLoadedOptions(options) {
+    if (options?.period) {
+        document.getElementById('dateFrom').value = options.period.start;
+        document.getElementById('dateTo').value = options.period.end;
+    }
+    buildFilterList('empList', options?.employees, 'emp');
+    buildFilterList('branchList', options?.branches, 'branch');
+    buildFilterList('shiftList', options?.shifts, 'shift');
+    buildFilterList('catList', options?.categories, 'cat');
+    buildFilterList('matList', options?.materials, 'mat');
+    await refreshDashboard();
+}
+
 async function refreshDashboard() {
     const res = await fetch('/api/filters', {
         method: 'POST',
@@ -313,18 +330,7 @@ document.getElementById('dataFile')?.addEventListener('change', async e => {
     const data = await res.json();
     if (data.ok) {
         document.getElementById('uploadStatus').textContent = '✓ Data loaded';
-        await refreshDashboard();
-        const r2 = await fetch('/api/dashboard-data');
-        const d2 = await r2.json();
-        buildFilterList('empList', d2.filter_options?.employees, 'emp');
-        buildFilterList('branchList', d2.filter_options?.branches, 'branch');
-        buildFilterList('shiftList', d2.filter_options?.shifts, 'shift');
-        buildFilterList('catList', d2.filter_options?.categories, 'cat');
-        buildFilterList('matList', d2.filter_options?.materials, 'mat');
-        if (d2.filter_options?.period) {
-            document.getElementById('dateFrom').value = d2.filter_options.period.start;
-            document.getElementById('dateTo').value = d2.filter_options.period.end;
-        }
+        await applyLoadedOptions(data.options);
     } else {
         document.getElementById('uploadStatus').textContent = '✗ ' + data.error;
     }

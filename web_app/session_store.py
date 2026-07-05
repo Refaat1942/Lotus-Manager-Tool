@@ -40,6 +40,7 @@ def load_file(user_id: int, content: bytes, filename: str):
         "materials": opts.get("materials", []),
     }
     state["analytics"] = AnalyticsService(state["processor"])
+    apply_user_filters(user_id, state["filters"], state["daily_avg"])
     return opts
 
 
@@ -63,7 +64,7 @@ def get_dashboard_data(user_id: int):
     state = get_user_state(user_id)
     proc = state["processor"]
     ana = state["analytics"]
-    if proc.df is None:
+    if proc.df is None or proc.df.empty:
         return {"has_data": False}
     kpis = proc.get_kpis(state["daily_avg"])
     emp_overview = ana.employee_performance("overview")

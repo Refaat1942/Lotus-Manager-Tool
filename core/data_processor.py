@@ -149,7 +149,7 @@ class DataProcessor:
 
         def _filter(col, selected):
             nonlocal df
-            if col and col in df.columns and selected is not None:
+            if col and col in df.columns and selected:
                 df = df[df[col].astype(str).isin(selected)]
 
         _filter(self.c_name, employees)
