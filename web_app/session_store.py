@@ -1,5 +1,4 @@
 import io
-import uuid
 import pandas as pd
 from core.data_processor import DataProcessor
 from core.analytics import AnalyticsService
@@ -40,6 +39,7 @@ def load_file(user_id: int, content: bytes, filename: str):
         "categories": opts.get("categories", []),
         "materials": opts.get("materials", []),
     }
+    state["analytics"] = AnalyticsService(state["processor"])
     return opts
 
 
@@ -66,19 +66,29 @@ def get_dashboard_data(user_id: int):
     if proc.df is None:
         return {"has_data": False}
     kpis = proc.get_kpis(state["daily_avg"])
+    emp_overview = ana.employee_performance("overview")
+    emp_ai = ana.employee_performance("ai")
+    emp_sales = ana.employee_performance("sales_types")
+    emp_eff = ana.employee_performance("efficiency")
+    dates = state["filter_options"].get("dates", [])
     return {
         "has_data": True,
         "kpis": kpis,
+        "branch_name": proc.branch_name,
         "material_chart": ana.chart_material_groups(),
         "hourly_chart": ana.chart_hourly_sales(),
         "shift_chart": ana.chart_shift_sales(),
         "category_chart": ana.chart_category_pie(),
+        "top_products_chart": ana.chart_top_products_qty(),
         "top_employees": ana.top_employees(),
-        "top_products": ana.top_products(50),
-        "employee_overview": ana.employee_performance("overview"),
-        "employee_ai": ana.employee_performance("ai"),
+        "top_products": ana.top_products(150),
+        "employee_overview": emp_overview,
+        "employee_ai": emp_ai,
+        "employee_sales_types": emp_sales,
+        "employee_efficiency": emp_eff,
         "executive": ana.executive_summary(),
         "filter_options": state["filter_options"],
         "filters": state["filters"],
         "daily_avg": state["daily_avg"],
+        "valid_dates": dates,
     }

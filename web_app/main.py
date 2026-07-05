@@ -1,24 +1,26 @@
 import os
-import shutil
+import io
+from datetime import datetime
 from pathlib import Path
 from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from web_app.database import (
     init_db, verify_user, get_branding, update_branding,
-    list_users, create_user, update_user, delete_user, import_master_items, get_master_df, UPLOAD_DIR,
+    list_users, create_user, update_user, delete_user, import_master_items,
+    get_master_df, change_user_password, UPLOAD_DIR,
 )
 from web_app.auth import create_session, get_session, require_login, require_role
 from web_app.i18n import t
 from web_app.session_store import load_file, apply_user_filters, get_dashboard_data, get_user_state
 from core.utils import decrypt_master_file
-from core.analytics import AnalyticsService
+import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
-APP_VERSION = os.environ.get("APP_VERSION", "20260705.1")
+APP_VERSION = os.environ.get("APP_VERSION", "20260705.2")
 app = FastAPI(title="Lotus Manager Tool Web")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "lotus-web-secret-change-me-2026"))
 
@@ -143,6 +145,104 @@ async def stagnant_data(request: Request):
     state["analytics"].set_divisor(state["daily_avg"])
     rows = state["analytics"].stagnant_analysis(master_df)
     return JSONResponse({"rows": rows})
+
+
+@app.post("/api/employee/{mode}")
+@require_login
+async def employee_mode(mode: str, request: Request):
+    session = get_session(request)
+    state = get_user_state(session["id"])
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    if mode == "subcategories":
+        pwd = body.get("password", "")
+        user = verify_user(session["username"], pwd)
+        if not user:
+            return JSONResponse({"ok": False, "error": "Password required for subcategories analysis"}, status_code=403)
+    state["analytics"].set_divisor(state["daily_avg"])
+    master_df = get_master_df() if mode == "subcategories" else None
+    data = state["analytics"].employee_performance(mode, master_df)
+    return JSONResponse({"ok": True, "data": data})
+
+
+@app.post("/api/date-compare")
+@require_login
+async def date_compare(request: Request):
+    session = get_session(request)
+    state = get_user_state(session["id"])
+    body = await request.json()
+    state["analytics"].set_divisor(state["daily_avg"])
+    result = state["analytics"].date_compare(
+        body.get("p1_start"), body.get("p1_end"),
+        body.get("p2_start"), body.get("p2_end"),
+        body.get("mode", "hourly"),
+    )
+    return JSONResponse(result)
+
+
+@app.post("/api/trend-compare")
+@require_login
+async def trend_compare(request: Request, file: UploadFile = File(...)):
+    session = get_session(request)
+    state = get_user_state(session["id"])
+    if state["processor"].df is None:
+        return JSONResponse({"ok": False, "error": "Load current data first"}, status_code=400)
+    try:
+        content = await file.read()
+        history_emp = pd.read_excel(io.BytesIO(content), sheet_name="Employees_Data")
+        history_meta = pd.read_excel(io.BytesIO(content), sheet_name="Global_Metadata")
+        state["analytics"].set_divisor(state["daily_avg"])
+        result = state["analytics"].trend_compare(history_emp, history_meta)
+        return JSONResponse({"ok": True, "data": result})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+@app.get("/api/export/snapshot")
+@require_login
+async def export_snapshot(request: Request):
+    session = get_session(request)
+    state = get_user_state(session["id"])
+    if state["processor"].df is None:
+        raise HTTPException(400, "No data loaded")
+    state["analytics"].set_divisor(state["daily_avg"])
+    buf = state["analytics"].build_snapshot_excel()
+    fname = f"Snapshot_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@app.post("/api/export/table")
+@require_login
+async def export_table(request: Request):
+    import pandas as pd
+    body = await request.json()
+    headers = body.get("headers", [])
+    rows = body.get("rows", [])
+    sheet = body.get("sheet_name", "Data")
+    df = pd.DataFrame(rows, columns=headers)
+    buf = io.BytesIO()
+    df.to_excel(buf, index=False, sheet_name=sheet[:31])
+    buf.seek(0)
+    fname = f"{sheet}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@app.post("/api/change-password")
+@require_login
+async def change_password(request: Request):
+    session = get_session(request)
+    body = await request.json()
+    ok, msg = change_user_password(session["id"], body.get("old_password", ""), body.get("new_password", ""))
+    if not ok:
+        return JSONResponse({"ok": False, "error": msg}, status_code=400)
+    return JSONResponse({"ok": True, "message": msg})
 
 
 @app.post("/api/users")

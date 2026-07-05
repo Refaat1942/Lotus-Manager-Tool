@@ -87,6 +87,16 @@ def get_user_by_id(user_id: int):
     return dict(row) if row else None
 
 
+def change_user_password(user_id: int, old_password: str, new_password: str):
+    user = get_user_by_id(user_id)
+    if not user or user["password_hash"] != hash_password(old_password):
+        return False, "Incorrect old password"
+    if len(new_password) < 4:
+        return False, "Password must be at least 4 characters"
+    update_user(user_id, password=new_password)
+    return True, "Password changed"
+
+
 def list_users():
     conn = get_conn()
     rows = conn.execute("SELECT id, username, role, full_name, is_active, created_at FROM users ORDER BY id").fetchall()

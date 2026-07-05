@@ -8,10 +8,69 @@ class AnalyticsService:
         self.p = processor
         self._daily = False
         self.div = 1
+        self._emp_stats_cache = None
 
     def set_divisor(self, daily_avg):
         self._daily = daily_avg
         self.div = max(1, self.p.period_info.get("days", 1)) if daily_avg else 1
+
+    def _fmt_rec(self, x):
+        return round(x / self.div, 1) if self._daily else int(x)
+
+    def _emp_metrics(self):
+        df = self.p.df
+        grp = df.groupby(self.p.c_name)
+        emp_sales = grp[self.p.c_price].sum()
+        items_sold = grp[self.p.c_qty].sum()
+        emp_rec = self.p.get_receipts_series(df).reindex(emp_sales.index, fill_value=1).replace(0, 1)
+        avg_rec = (emp_sales / emp_rec).round(2)
+        items_per_rec = (items_sold / emp_rec).round(2)
+        main_shift = (
+            df.groupby(self.p.c_name)["Shift_Name"].agg(lambda x: x.mode()[0] if not x.mode().empty else "Unknown")
+            if "Shift_Name" in df.columns
+            else pd.Series("Unknown", index=emp_sales.index)
+        )
+        time_diff_series = pd.Series(index=emp_sales.index, data=0.0)
+        if "DateTime" in df.columns and "True_Receipt_ID" in df.columns:
+            sort_keys = [self.p.c_name]
+            if self.p.c_pos:
+                sort_keys.append(self.p.c_pos)
+            sort_keys.append("DateTime")
+            df_s = df.dropna(subset=["DateTime"]).sort_values(by=sort_keys)
+            r_times = df_s.groupby([self.p.c_name, "True_Receipt_ID"])["DateTime"].min().reset_index().sort_values(by=[self.p.c_name, "DateTime"])
+            r_times["Diff"] = r_times.groupby(self.p.c_name)["DateTime"].diff().dt.total_seconds() / 60
+            r_times.loc[r_times["Diff"] > 480, "Diff"] = np.nan
+            time_diff_series = r_times.groupby(self.p.c_name)["Diff"].mean().fillna(0).round(1)
+        self._emp_stats_cache = pd.DataFrame({
+            "Employee Name": emp_sales.index,
+            "Total Sales": emp_sales.values,
+            "Total Receipts": emp_rec.values,
+            "Avg Receipt": avg_rec.values,
+        })
+        return {
+            "emp_sales": emp_sales, "items_sold": items_sold, "emp_rec": emp_rec,
+            "avg_rec": avg_rec, "items_per_rec": items_per_rec, "main_shift": main_shift,
+            "time_diff_series": time_diff_series,
+            "sys_avg_rec": emp_sales.sum() / emp_rec.sum() if emp_rec.sum() else 0,
+            "sys_avg_mat": items_sold.sum() / emp_rec.sum() if emp_rec.sum() else 0,
+        }
+
+    def get_emp_stats_snapshot(self):
+        if self._emp_stats_cache is None:
+            self._emp_metrics()
+        return self._emp_stats_cache
+
+    def get_global_stats(self):
+        df = self.p.df
+        if df is None:
+            return {}
+        t_sales = float(df[self.p.c_price].sum())
+        t_pcs = float(df[self.p.c_qty].sum())
+        t_rec = int(df["True_Receipt_ID"].nunique()) if "True_Receipt_ID" in df.columns else len(df)
+        return {
+            "Total Sales": t_sales, "Total Receipts": t_rec,
+            "Total Pieces": t_pcs, "Avg Receipt": t_sales / t_rec if t_rec else 0,
+        }
 
     def chart_material_groups(self):
         df = self.p.df
@@ -39,6 +98,13 @@ class AnalyticsService:
         if df is None or not self.p.c_cat:
             return {"labels": [], "values": []}
         data = df.groupby(self.p.c_cat)[self.p.c_price].sum()
+        return {"labels": [web_text(x) for x in data.index], "values": [round(v, 2) for v in data.values]}
+
+    def chart_top_products_qty(self):
+        df = self.p.df
+        if df is None or not self.p.c_desc:
+            return {"labels": [], "values": []}
+        data = df.groupby(self.p.c_desc)[self.p.c_qty].sum().sort_values(ascending=True).tail(10) / self.div
         return {"labels": [web_text(x) for x in data.index], "values": [round(v, 2) for v in data.values]}
 
     def top_employees(self, limit=10):
@@ -84,25 +150,18 @@ class AnalyticsService:
             })
         return rows
 
-    def employee_performance(self, mode="overview"):
+    def employee_performance(self, mode="overview", master_df=None):
         df = self.p.df
         if df is None or not self.p.c_name:
-            return []
-        grp = df.groupby(self.p.c_name)
-        emp_sales = grp[self.p.c_price].sum()
-        items_sold = grp[self.p.c_qty].sum()
-        emp_rec = self.p.get_receipts_series(df).reindex(emp_sales.index, fill_value=1).replace(0, 1)
-        avg_rec = (emp_sales / emp_rec).round(2)
-        items_per_rec = (items_sold / emp_rec).round(2)
-        main_shift = (
-            df.groupby(self.p.c_name)["Shift_Name"].agg(lambda x: x.mode()[0] if not x.mode().empty else "Unknown")
-            if "Shift_Name" in df.columns
-            else pd.Series("Unknown", index=emp_sales.index)
-        )
-        rows = []
-        fmt_rec = lambda x: round(x / self.div, 1) if self._daily else int(x)
+            return {"columns": [], "rows": []}
+        m = self._emp_metrics()
+        emp_sales, emp_rec = m["emp_sales"], m["emp_rec"]
+        avg_rec, items_per_rec = m["avg_rec"], m["items_per_rec"]
+        main_shift, time_diff_series = m["main_shift"], m["time_diff_series"]
+        items_sold = m["items_sold"]
 
         if mode == "overview":
+            rows = []
             for emp, row in emp_sales.items():
                 pos = "Unknown"
                 if "Translated_Position" in df.columns:
@@ -111,30 +170,128 @@ class AnalyticsService:
                     "employee": web_text(emp), "position": pos,
                     "shift": web_text(main_shift.get(emp, "")),
                     "sales": round(row / self.div, 2),
-                    "receipts": fmt_rec(emp_rec.get(emp, 0)),
+                    "receipts": self._fmt_rec(emp_rec.get(emp, 0)),
                     "avg_receipt": round(avg_rec.get(emp, 0), 2),
                     "materials_per_receipt": round(items_per_rec.get(emp, 0), 2),
                 })
-        elif mode == "ai":
+            return {"columns": ["employee", "position", "shift", "sales", "receipts", "avg_receipt", "materials_per_receipt"], "rows": rows}
+
+        if mode == "sales_types":
+            cat_sales = pd.DataFrame()
+            sale_types = []
+            if self.p.c_cat:
+                cat_sales = df.groupby([self.p.c_name, self.p.c_cat])[self.p.c_price].sum().unstack(fill_value=0)
+                sale_types = [web_text(c) for c in cat_sales.columns]
+            combined = pd.DataFrame({"Sales": emp_sales, "Recs": emp_rec, "MatPerRec": items_per_rec, "Shift": main_shift}).join(cat_sales).sort_values("Sales", ascending=False)
+            rows = []
+            for emp, row in combined.iterrows():
+                r = {
+                    "employee": web_text(emp), "shift": web_text(row["Shift"]),
+                    "receipts": self._fmt_rec(row["Recs"]),
+                    "sales": round(row["Sales"] / self.div, 2),
+                    "materials_per_receipt": round(row["MatPerRec"], 2),
+                }
+                for i, c in enumerate(cat_sales.columns):
+                    r[f"cat_{i}"] = round(row[c] / self.div, 2)
+                rows.append(r)
+            cols = ["employee", "shift", "receipts", "sales", "materials_per_receipt"] + [f"cat_{i}" for i in range(len(sale_types))]
+            return {"columns": cols, "column_labels": ["employee", "shift", "receipts", "sales", "materials_per_receipt"] + sale_types, "rows": rows}
+
+        if mode == "subcategories":
+            temp_df = df.copy()
+            if master_df is not None and not master_df.empty and self.p.c_desc:
+                master_sub = master_df[["Description", "SubCat1", "SubCat2"]].copy()
+                master_sub["Description"] = master_sub["Description"].astype(str).str.strip()
+                temp_df[self.p.c_desc] = temp_df[self.p.c_desc].astype(str).str.strip()
+                temp_df = temp_df.merge(master_sub, left_on=self.p.c_desc, right_on="Description", how="left")
+                temp_df["SubCat1"] = temp_df["SubCat1"].fillna("Uncategorized")
+                temp_df["SubCat2"] = temp_df["SubCat2"].fillna("Uncategorized")
+            else:
+                temp_df["SubCat1"] = temp_df["Item_Type"] if "Item_Type" in temp_df.columns else "Uncategorized"
+                temp_df["SubCat2"] = "N/A"
+            rec_col = "True_Receipt_ID" if "True_Receipt_ID" in temp_df.columns else self.p.c_rec
+            sub_grp = temp_df.groupby([self.p.c_name, "SubCat1", "SubCat2"]).agg({
+                self.p.c_price: "sum", self.p.c_qty: "sum", rec_col: "nunique"
+            }).reset_index()
+            sub_grp = sub_grp[sub_grp[self.p.c_price] > 0].sort_values(by=[self.p.c_name, self.p.c_price], ascending=[True, False])
+            rows = []
+            for _, row in sub_grp.iterrows():
+                e_tot = emp_sales.get(row[self.p.c_name], 1)
+                pct = (row[self.p.c_price] / e_tot * 100) if e_tot > 0 else 0
+                rows.append({
+                    "employee": web_text(row[self.p.c_name]),
+                    "subcat1": web_text(row["SubCat1"]),
+                    "subcat2": web_text(row["SubCat2"]),
+                    "sales": round(row[self.p.c_price] / self.div, 2),
+                    "sales_pct": f"{pct:.1f} %",
+                    "materials": round(row[self.p.c_qty] / self.div, 1) if self._daily else int(row[self.p.c_qty]),
+                    "receipts": self._fmt_rec(row[rec_col]),
+                })
+            return {"columns": ["employee", "subcat1", "subcat2", "sales", "sales_pct", "materials", "receipts"], "rows": rows}
+
+        if mode == "efficiency":
+            combined = pd.DataFrame({
+                "Recs": emp_rec, "Avg": avg_rec, "MatPerRec": items_per_rec,
+                "Items": items_sold, "Time": time_diff_series, "Shift": main_shift,
+            }).sort_values("Recs", ascending=False)
+            avg_time_global = time_diff_series[time_diff_series > 0].mean() if not time_diff_series.empty else 0
+            rows = []
+            for emp, row in combined.iterrows():
+                rows.append({
+                    "employee": web_text(emp), "shift": web_text(row["Shift"]),
+                    "receipts": self._fmt_rec(row["Recs"]),
+                    "avg_receipt": round(row["Avg"], 2),
+                    "materials_per_receipt": round(row["MatPerRec"], 2),
+                    "total_materials": round(row["Items"] / self.div, 2),
+                    "avg_mins": f"{row['Time']} mins" if row["Time"] > 0 else "N/A",
+                })
+            rows.append({
+                "employee": "📊 SUBTOTAL / AVG", "shift": "---",
+                "receipts": self._fmt_rec(emp_rec.sum()),
+                "avg_receipt": round(m["sys_avg_rec"], 2),
+                "materials_per_receipt": round(m["sys_avg_mat"], 2),
+                "total_materials": round(items_sold.sum() / self.div, 2),
+                "avg_mins": f"{avg_time_global:.1f} mins" if avg_time_global > 0 else "N/A",
+                "is_subtotal": True,
+            })
+            return {"columns": ["employee", "shift", "receipts", "avg_receipt", "materials_per_receipt", "total_materials", "avg_mins"], "rows": rows}
+
+        if mode == "ai":
             avg_global = avg_rec.mean() if not avg_rec.empty else 0
-            combined = pd.DataFrame({"Sales": emp_sales, "Avg": avg_rec, "MatPerRec": items_per_rec, "Shift": main_shift}).sort_values("Sales", ascending=False)
+            time_global = time_diff_series[time_diff_series > 0].mean() if not time_diff_series.empty else 0
+            cat_sales = df.groupby([self.p.c_name, self.p.c_cat])[self.p.c_price].sum().unstack(fill_value=0) if self.p.c_cat else pd.DataFrame()
+            combined = pd.DataFrame({"Sales": emp_sales, "Avg": avg_rec, "Time": time_diff_series, "MatPerRec": items_per_rec, "Shift": main_shift}).sort_values("Sales", ascending=False)
+            rows = []
             for i, (emp, row) in enumerate(combined.iterrows()):
                 tier = "Star Performer" if i < 3 else ("Solid Contributor" if i < len(combined) / 2 else "Needs Improvement")
                 recs = []
                 if row["Avg"] >= avg_global * 1.1:
-                    recs.append("Excellent basket value.")
+                    recs.append("Excellent basket value (Upselling effective).")
                 elif row["Avg"] < avg_global * 0.8:
-                    recs.append("Low avg receipt - needs cross-selling coaching.")
+                    recs.append("Low avg receipt. Needs coaching on cross-selling.")
                 if row["MatPerRec"] < 1.5:
-                    recs.append("Low materials/receipt.")
+                    recs.append("Low Materials/receipt. Suggest related items.")
+                elif row["MatPerRec"] > m["sys_avg_mat"] * 1.2:
+                    recs.append("Great at multi-item sales.")
+                if row["Shift"] == "Night Shift" and row["Time"] > time_global * 1.5:
+                    recs.append("High idle time on Night Shift.")
+                elif row["Time"] > 0 and row["Time"] > time_global * 1.3:
+                    recs.append("Processing is slow between receipts.")
+                if not cat_sales.empty and emp in cat_sales.index:
+                    e_cats = {str(k).lower(): v for k, v in cat_sales.loc[emp].items()}
+                    cash = sum(v for k, v in e_cats.items() if "cash" in k or "نقدي" in k)
+                    digital = sum(v for k, v in e_cats.items() if "digital" in k or "visa" in k or "فيزا" in k)
+                    if digital == 0 and cash > 0:
+                        recs.append("Zero Digital/Visa sales.")
                 if not recs:
-                    recs.append("Steady performance.")
+                    recs.append("Steady performance. Maintain consistent numbers.")
                 rows.append({
                     "employee": web_text(emp), "shift": web_text(row["Shift"]),
                     "tier": tier, "materials_per_receipt": round(row["MatPerRec"], 2),
                     "recommendation": " | ".join(recs),
                 })
-        return rows
+            return {"columns": ["employee", "shift", "tier", "materials_per_receipt", "recommendation"], "rows": rows}
+        return {"columns": [], "rows": []}
 
     def executive_summary(self):
         df = self.p.df
@@ -153,18 +310,162 @@ class AnalyticsService:
             except Exception:
                 pass
         rec_col = "True_Receipt_ID" if "True_Receipt_ID" in df.columns else self.p.c_rec
-        if "Shift_Name" in df.columns and self.p.c_branch in df.columns:
-            shift_grp = df.groupby([self.p.c_branch, "Shift_Name"]).agg({self.p.c_price: "sum", rec_col: "nunique"}).reset_index()
+        if "Shift_Name" in df.columns:
+            if self.p.c_branch in df.columns:
+                shift_grp = df.groupby([self.p.c_branch, "Shift_Name"]).agg({self.p.c_price: "sum", rec_col: "nunique"}).reset_index()
+            else:
+                shift_grp = df.groupby("Shift_Name").agg({self.p.c_price: "sum", rec_col: "nunique"}).reset_index()
+                shift_grp[self.p.c_branch] = "N/A"
             for _, row in shift_grp.iterrows():
                 recs = row[rec_col] if row[rec_col] > 0 else 1
                 result["shifts_by_branch"].append({
                     "branch": web_text(row[self.p.c_branch]),
                     "shift": web_text(row["Shift_Name"]),
                     "sales": round(row[self.p.c_price] / self.div, 2),
-                    "receipts": round(row[rec_col] / self.div, 1) if self._daily else int(row[rec_col]),
+                    "receipts": self._fmt_rec(row[rec_col]),
                     "avg_receipt": round(row[self.p.c_price] / recs, 2),
                 })
+        emp_grp = df.groupby(self.p.c_name).agg({self.p.c_price: "sum", rec_col: "nunique"})
+        emp_grp["AvgRec"] = emp_grp[self.p.c_price] / emp_grp[rec_col].replace(0, 1)
+        emp_grp = emp_grp.sort_values(by=self.p.c_price, ascending=False)
+        mean_sales = emp_grp[self.p.c_price].mean()
+        mean_avg_rec = emp_grp["AvgRec"].mean()
+
+        def get_top_col(target_col):
+            if target_col not in df.columns:
+                return pd.Series("N/A", index=emp_grp.index)
+            return df.groupby([self.p.c_name, target_col])[self.p.c_price].sum().reset_index().sort_values(self.p.c_price, ascending=False).drop_duplicates(self.p.c_name).set_index(self.p.c_name)[target_col]
+
+        top_sales_type = get_top_col(self.p.c_cat)
+        top_item_type = get_top_col("Item_Type")
+        emp_branch = df.groupby(self.p.c_name)[self.p.c_branch].agg(lambda x: x.mode()[0] if not x.mode().empty else "Unknown") if self.p.c_branch in df.columns else pd.Series("Unknown", index=emp_grp.index)
+        emp_shift = df.groupby(self.p.c_name)["Shift_Name"].agg(lambda x: x.mode()[0] if not x.mode().empty else "Unknown") if "Shift_Name" in df.columns else pd.Series("Unknown", index=emp_grp.index)
+
+        for emp, row in emp_grp.iterrows():
+            s, r, a = row[self.p.c_price], row[rec_col], row["AvgRec"]
+            if s >= mean_sales and a >= mean_avg_rec:
+                ev = "⭐ Excellent: High Volume & High Basket"
+            elif s >= mean_sales and a < mean_avg_rec:
+                ev = "📈 Volume Driven: Needs Cross-selling"
+            elif s < mean_sales and a >= mean_avg_rec:
+                ev = "🎯 Quality over Qty: Good Upselling"
+            else:
+                ev = "⚠️ Needs Training: Low Volume & Low Basket"
+            result["pharmacists"].append({
+                "name": web_text(emp), "branch": web_text(emp_branch.get(emp, "Unknown")),
+                "shift": web_text(emp_shift.get(emp, "Unknown")),
+                "sales": round(s / self.div, 2), "receipts": self._fmt_rec(r),
+                "avg_receipt": round(a, 2),
+                "top_sales_type": web_text(top_sales_type.get(emp, "N/A")),
+                "top_category": web_text(top_item_type.get(emp, "N/A")),
+                "evaluation": ev,
+            })
         return result
+
+    def date_compare(self, s1, e1, s2, e2, mode="hourly"):
+        df = self.p.df
+        if df is None or not self.p.c_date:
+            return {"error": "No date column"}
+        df = df.copy()
+        df["Temp_Date"] = pd.to_datetime(df[self.p.c_date], errors="coerce").dt.strftime("%Y-%m-%d")
+        df1 = df[(df["Temp_Date"] >= s1) & (df["Temp_Date"] <= e1)]
+        df2 = df[(df["Temp_Date"] >= s2) & (df["Temp_Date"] <= e2)]
+        d1 = max(1, (pd.to_datetime(e1) - pd.to_datetime(s1)).days + 1) if self._daily else 1
+        d2 = max(1, (pd.to_datetime(e2) - pd.to_datetime(s2)).days + 1) if self._daily else 1
+        rec_col = "True_Receipt_ID" if "True_Receipt_ID" in df.columns else self.p.c_rec
+
+        if mode == "totals":
+            return {
+                "mode": "totals",
+                "p1": {"start": s1, "end": e1, "sales": round(df1[self.p.c_price].sum() / d1, 2),
+                       "receipts": round((df1[rec_col].nunique() if not df1.empty else 0) / d1, 2)},
+                "p2": {"start": s2, "end": e2, "sales": round(df2[self.p.c_price].sum() / d2, 2),
+                       "receipts": round((df2[rec_col].nunique() if not df2.empty else 0) / d2, 2)},
+            }
+
+        if "Sale_Hour" not in df.columns:
+            return {"error": "Hourly data not available"}
+        h1 = (df1.groupby("Sale_Hour")[self.p.c_price].sum().reindex(range(24), fill_value=0)) / d1
+        h2 = (df2.groupby("Sale_Hour")[self.p.c_price].sum().reindex(range(24), fill_value=0)) / d2
+        rows = []
+        chart_labels, chart_p1, chart_p2 = [], [], []
+        for hour in range(24):
+            v1, v2 = float(h1.get(hour, 0)), float(h2.get(hour, 0))
+            if v1 == 0 and v2 == 0:
+                continue
+            diff_pct = ((v2 - v1) / v1 * 100) if v1 > 0 else (100 if v2 > 0 else 0)
+            rows.append({
+                "hour": f"{hour:02d}:00 - {hour+1:02d}:00",
+                "p1_sales": round(v1, 2), "p2_sales": round(v2, 2),
+                "variance": f"{'+' if diff_pct > 0 else ''}{diff_pct:.1f}%",
+            })
+            chart_labels.append(f"{hour:02d}:00")
+            chart_p1.append(round(v1, 2))
+            chart_p2.append(round(v2, 2))
+        return {"mode": "hourly", "rows": rows, "chart": {"labels": chart_labels, "p1": chart_p1, "p2": chart_p2}}
+
+    def trend_compare(self, history_emp_df, history_meta_df):
+        gs = self.get_global_stats()
+        prev = history_meta_df.iloc[0]
+        curr_sales = gs.get("Total Sales", 0)
+        p_sales = float(prev.get("Global Sales", 0))
+        curr_recs = gs.get("Total Receipts", 0)
+        p_recs = float(prev.get("Global Receipts", 0))
+        curr_avg = gs.get("Avg Receipt", 0)
+        p_avg = float(prev.get("Global Avg Receipt", 0))
+        curr_pcs = gs.get("Total Pieces", 0)
+        p_pcs = float(prev.get("Global Pcs", 0))
+
+        def pct(n, o):
+            return ((n - o) / o * 100) if o else 0
+
+        kpis = [
+            {"title": "Total Sales", "old": p_sales, "new": curr_sales, "pct": pct(curr_sales, p_sales)},
+            {"title": "Total Receipts", "old": p_recs, "new": curr_recs, "pct": pct(curr_recs, p_recs)},
+            {"title": "Average Receipt", "old": p_avg, "new": curr_avg, "pct": pct(curr_avg, p_avg)},
+            {"title": "Total Pieces Sold", "old": p_pcs, "new": curr_pcs, "pct": pct(curr_pcs, p_pcs)},
+        ]
+        self._emp_metrics()
+        curr_emp = self._emp_stats_cache
+        merged = pd.merge(history_emp_df, curr_emp, on="Employee Name", how="inner", suffixes=("_prev", "_curr"))
+        rows = []
+        for _, row in merged.iterrows():
+            emp = row["Employee Name"]
+            s_prev, s_curr = float(row["Total Sales_prev"]), float(row["Total Sales_curr"])
+            r_prev = float(row.get("Total Receipts_prev", 0))
+            r_curr = float(row.get("Total Receipts_curr", 0))
+            a_prev, a_curr = float(row["Avg Receipt_prev"]), float(row["Avg Receipt_curr"])
+            sales_pct = ((s_curr - s_prev) / s_prev * 100) if s_prev > 0 else 0
+            avg_pct = ((a_curr - a_prev) / a_prev * 100) if a_prev > 0 else 0
+            if sales_pct > 10 and avg_pct > 5:
+                insight = "🟢 Outstanding Growth: Both volume and basket size improved."
+            elif sales_pct > 5 and avg_pct <= 0:
+                insight = "🟡 Volume Driven: Sales went up, but average receipt dropped."
+            elif sales_pct < -5 and avg_pct > 5:
+                insight = "🟡 Quality over Quantity: Lost some traffic but maximized value per patient."
+            elif sales_pct < -10 and avg_pct < -5:
+                insight = "🔴 Critical Decline: Both sales and basket size dropped significantly."
+            else:
+                insight = "⚪ Stable Performance."
+            rows.append({
+                "employee": web_text(emp),
+                "prev_sales": round(s_prev, 0), "curr_sales": round(s_curr, 0),
+                "sales_delta": f"{sales_pct:.1f}%",
+                "prev_recs": round(r_prev, 0), "curr_recs": round(r_curr, 0),
+                "prev_avg": round(a_prev, 0), "curr_avg": round(a_curr, 0),
+                "avg_delta": f"{avg_pct:.1f}%", "insight": insight,
+            })
+        return {
+            "header": {
+                "prev_start": str(prev.get("Start Date", "N/A"))[:10],
+                "prev_end": str(prev.get("End Date", "N/A"))[:10],
+                "prev_days": prev.get("Days Count", "N/A"),
+                "curr_start": self.p.period_info.get("start"),
+                "curr_end": self.p.period_info.get("end"),
+                "curr_days": self.p.period_info.get("days"),
+            },
+            "kpis": kpis, "rows": rows,
+        }
 
     def stagnant_analysis(self, master_df):
         df = self.p.df
@@ -175,7 +476,7 @@ class AnalyticsService:
         merged = pd.merge(master_df, sales_grp, on="Description", how="left")
         merged["Qty_Sold"] = merged["Qty_Sold"].fillna(0)
         rows = []
-        for (_, _, granular), group in merged.groupby(["SubCat1", "SubCat2", "GranularCat"]):
+        for (cat1, cat2, granular), group in merged.groupby(["SubCat1", "SubCat2", "GranularCat"]):
             if str(granular).strip().lower() in ["", "nan", "none", "general", "other"]:
                 continue
             top_seller = group.sort_values(by="Qty_Sold", ascending=False).iloc[0]
@@ -189,5 +490,27 @@ class AnalyticsService:
                     "alt_code": clean_item_code(top_seller["Material"]),
                     "alt_drug": web_text(top_seller["Description"]),
                     "alt_qty": int(top_seller["Qty_Sold"]),
+                    "group_match": web_text(f"{cat1} -> {granular}"),
                 })
         return rows
+
+    def build_snapshot_excel(self):
+        import io
+        gs = self.get_global_stats()
+        self._emp_metrics()
+        meta_df = pd.DataFrame([{
+            "Branch": str(self.p.branch_name),
+            "Start Date": self.p.period_info.get("start", "N/A"),
+            "End Date": self.p.period_info.get("end", "N/A"),
+            "Days Count": self.p.period_info.get("days", 1),
+            "Global Sales": gs.get("Total Sales", 0),
+            "Global Receipts": gs.get("Total Receipts", 0),
+            "Global Avg Receipt": gs.get("Avg Receipt", 0),
+            "Global Pcs": gs.get("Total Pieces", 0),
+        }])
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            meta_df.to_excel(writer, sheet_name="Global_Metadata", index=False)
+            self._emp_stats_cache.to_excel(writer, sheet_name="Employees_Data", index=False)
+        buf.seek(0)
+        return buf
