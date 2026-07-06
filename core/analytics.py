@@ -41,6 +41,16 @@ class AnalyticsService:
             r_times["Diff"] = r_times.groupby(self.p.c_name)["DateTime"].diff().dt.total_seconds() / 60
             r_times.loc[r_times["Diff"] > 480, "Diff"] = np.nan
             time_diff_series = r_times.groupby(self.p.c_name)["Diff"].mean().fillna(0).round(1)
+        working_days = pd.Series(0, index=emp_sales.index, dtype=int)
+        date_col = "Parsed_Date" if "Parsed_Date" in df.columns else self.p.c_date
+        if date_col and date_col in df.columns:
+            day_df = df[[self.p.c_name, date_col]].dropna(subset=[self.p.c_name])
+            if date_col == "Parsed_Date":
+                day_vals = day_df["Parsed_Date"].dt.normalize()
+            else:
+                day_vals = pd.to_datetime(day_df[date_col], errors="coerce").dt.normalize()
+            day_df = day_df.assign(_work_day=day_vals).dropna(subset=["_work_day"])
+            working_days = day_df.groupby(self.p.c_name)["_work_day"].nunique().reindex(emp_sales.index, fill_value=0).astype(int)
         self._emp_stats_cache = pd.DataFrame({
             "Employee Name": emp_sales.index,
             "Total Sales": emp_sales.values,
@@ -50,7 +60,7 @@ class AnalyticsService:
         return {
             "emp_sales": emp_sales, "items_sold": items_sold, "emp_rec": emp_rec,
             "avg_rec": avg_rec, "items_per_rec": items_per_rec, "main_shift": main_shift,
-            "time_diff_series": time_diff_series,
+            "time_diff_series": time_diff_series, "working_days": working_days,
             "sys_avg_rec": emp_sales.sum() / emp_rec.sum() if emp_rec.sum() else 0,
             "sys_avg_mat": items_sold.sum() / emp_rec.sum() if emp_rec.sum() else 0,
         }
@@ -159,6 +169,7 @@ class AnalyticsService:
         avg_rec, items_per_rec = m["avg_rec"], m["items_per_rec"]
         main_shift, time_diff_series = m["main_shift"], m["time_diff_series"]
         items_sold = m["items_sold"]
+        working_days = m["working_days"]
 
         if mode == "overview":
             rows = []
@@ -169,12 +180,13 @@ class AnalyticsService:
                 rows.append({
                     "employee": web_text(emp), "position": pos,
                     "shift": web_text(main_shift.get(emp, "")),
+                    "working_days": int(working_days.get(emp, 0)),
                     "sales": round(row / self.div, 2),
                     "receipts": self._fmt_rec(emp_rec.get(emp, 0)),
                     "avg_receipt": round(avg_rec.get(emp, 0), 2),
                     "materials_per_receipt": round(items_per_rec.get(emp, 0), 2),
                 })
-            return {"columns": ["employee", "position", "shift", "sales", "receipts", "avg_receipt", "materials_per_receipt"], "rows": rows}
+            return {"columns": ["employee", "position", "shift", "working_days", "sales", "receipts", "avg_receipt", "materials_per_receipt"], "rows": rows}
 
         if mode == "sales_types":
             cat_sales = pd.DataFrame()
@@ -182,11 +194,12 @@ class AnalyticsService:
             if self.p.c_cat:
                 cat_sales = df.groupby([self.p.c_name, self.p.c_cat])[self.p.c_price].sum().unstack(fill_value=0)
                 sale_types = [web_text(c) for c in cat_sales.columns]
-            combined = pd.DataFrame({"Sales": emp_sales, "Recs": emp_rec, "MatPerRec": items_per_rec, "Shift": main_shift}).join(cat_sales).sort_values("Sales", ascending=False)
+            combined = pd.DataFrame({"Sales": emp_sales, "Recs": emp_rec, "MatPerRec": items_per_rec, "Shift": main_shift, "WorkingDays": working_days}).join(cat_sales).sort_values("Sales", ascending=False)
             rows = []
             for emp, row in combined.iterrows():
                 r = {
                     "employee": web_text(emp), "shift": web_text(row["Shift"]),
+                    "working_days": int(row["WorkingDays"]),
                     "receipts": self._fmt_rec(row["Recs"]),
                     "sales": round(row["Sales"] / self.div, 2),
                     "materials_per_receipt": round(row["MatPerRec"], 2),
@@ -194,8 +207,8 @@ class AnalyticsService:
                 for i, c in enumerate(cat_sales.columns):
                     r[f"cat_{i}"] = round(row[c] / self.div, 2)
                 rows.append(r)
-            cols = ["employee", "shift", "receipts", "sales", "materials_per_receipt"] + [f"cat_{i}" for i in range(len(sale_types))]
-            base_labels = ["employee", "shift", "receipts", "sales", "materials_per_receipt"]
+            cols = ["employee", "shift", "working_days", "receipts", "sales", "materials_per_receipt"] + [f"cat_{i}" for i in range(len(sale_types))]
+            base_labels = ["employee", "shift", "working_days", "receipts", "sales", "materials_per_receipt"]
             return {"columns": cols, "column_labels": base_labels + sale_types, "rows": rows}
 
         if mode == "subcategories":
@@ -235,12 +248,14 @@ class AnalyticsService:
             combined = pd.DataFrame({
                 "Recs": emp_rec, "Avg": avg_rec, "MatPerRec": items_per_rec,
                 "Items": items_sold, "Time": time_diff_series, "Shift": main_shift,
+                "WorkingDays": working_days,
             }).sort_values("Recs", ascending=False)
             avg_time_global = time_diff_series[time_diff_series > 0].mean() if not time_diff_series.empty else 0
             rows = []
             for emp, row in combined.iterrows():
                 rows.append({
                     "employee": web_text(emp), "shift": web_text(row["Shift"]),
+                    "working_days": int(row["WorkingDays"]),
                     "receipts": self._fmt_rec(row["Recs"]),
                     "avg_receipt": round(row["Avg"], 2),
                     "materials_per_receipt": round(row["MatPerRec"], 2),
@@ -248,7 +263,7 @@ class AnalyticsService:
                     "avg_mins": f"{row['Time']} mins" if row["Time"] > 0 else "N/A",
                 })
             rows.append({
-                "employee": "📊 SUBTOTAL / AVG", "shift": "---",
+                "employee": "📊 SUBTOTAL / AVG", "shift": "---", "working_days": "---",
                 "receipts": self._fmt_rec(emp_rec.sum()),
                 "avg_receipt": round(m["sys_avg_rec"], 2),
                 "materials_per_receipt": round(m["sys_avg_mat"], 2),
@@ -256,13 +271,13 @@ class AnalyticsService:
                 "avg_mins": f"{avg_time_global:.1f} mins" if avg_time_global > 0 else "N/A",
                 "is_subtotal": True,
             })
-            return {"columns": ["employee", "shift", "receipts", "avg_receipt", "materials_per_receipt", "total_materials", "avg_mins"], "rows": rows}
+            return {"columns": ["employee", "shift", "working_days", "receipts", "avg_receipt", "materials_per_receipt", "total_materials", "avg_mins"], "rows": rows}
 
         if mode == "ai":
             avg_global = avg_rec.mean() if not avg_rec.empty else 0
             time_global = time_diff_series[time_diff_series > 0].mean() if not time_diff_series.empty else 0
             cat_sales = df.groupby([self.p.c_name, self.p.c_cat])[self.p.c_price].sum().unstack(fill_value=0) if self.p.c_cat else pd.DataFrame()
-            combined = pd.DataFrame({"Sales": emp_sales, "Avg": avg_rec, "Time": time_diff_series, "MatPerRec": items_per_rec, "Shift": main_shift}).sort_values("Sales", ascending=False)
+            combined = pd.DataFrame({"Sales": emp_sales, "Avg": avg_rec, "Time": time_diff_series, "MatPerRec": items_per_rec, "Shift": main_shift, "WorkingDays": working_days}).sort_values("Sales", ascending=False)
             rows = []
             for i, (emp, row) in enumerate(combined.iterrows()):
                 tier = "Star Performer" if i < 3 else ("Solid Contributor" if i < len(combined) / 2 else "Needs Improvement")
@@ -279,6 +294,9 @@ class AnalyticsService:
                     recs.append("High idle time on Night Shift.")
                 elif row["Time"] > 0 and row["Time"] > time_global * 1.3:
                     recs.append("Processing is slow between receipts.")
+                period_days = max(1, self.p.period_info.get("days", 1))
+                if row["WorkingDays"] < period_days * 0.5:
+                    recs.append("Low working days in selected period.")
                 if not cat_sales.empty and emp in cat_sales.index:
                     e_cats = {str(k).lower(): v for k, v in cat_sales.loc[emp].items()}
                     cash = sum(v for k, v in e_cats.items() if "cash" in k or "نقدي" in k)
@@ -289,10 +307,11 @@ class AnalyticsService:
                     recs.append("Steady performance. Maintain consistent numbers.")
                 rows.append({
                     "employee": web_text(emp), "shift": web_text(row["Shift"]),
+                    "working_days": int(row["WorkingDays"]),
                     "tier": tier, "materials_per_receipt": round(row["MatPerRec"], 2),
                     "recommendation": " | ".join(recs),
                 })
-            return {"columns": ["employee", "shift", "tier", "materials_per_receipt", "recommendation"], "rows": rows}
+            return {"columns": ["employee", "shift", "working_days", "tier", "materials_per_receipt", "recommendation"], "rows": rows}
         return {"columns": [], "rows": []}
 
     def executive_summary(self):
