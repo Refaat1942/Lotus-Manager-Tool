@@ -74,6 +74,7 @@
                 <button class="tab" data-tab="datecompare">{{ t('date_compare') }}</button>
                 <button class="tab" data-tab="trend">{{ t('trend_compare') }}</button>
                 <button class="tab" data-tab="stagnant">{{ t('stagnant') }}</button>
+                <button class="tab" data-tab="deepsales">{{ t('deep_sales') }}</button>
             </div>
 
             <div class="tab-panel active" id="tab-overview">
@@ -147,6 +148,27 @@
                 </div>
                 <div class="table-wrap" style="margin-top:1rem"><table id="stagTable" class="data-table"></table></div>
             </div>
+
+            <div class="tab-panel" id="tab-deepsales">
+                <div class="compare-controls">
+                    <button id="loadDeepSales" class="btn btn-purple">{{ t('deep_sales') }}</button>
+                </div>
+                <div id="deepSalesStatus" class="status-text"></div>
+                <div id="deepSalesInsights" class="brief-card hidden"></div>
+                <div class="sub-tabs sub-tabs-scroll" id="deepSalesSubTabs">
+                    <button class="sub-tab deep-sub active" data-dmode="sales_type_category">{{ t('deep_type_category') }}</button>
+                    <button class="sub-tab deep-sub" data-dmode="category_subcategory">{{ t('deep_cat_subcat') }}</button>
+                    <button class="sub-tab deep-sub" data-dmode="top_items_subcategory">{{ t('deep_top_items') }}</button>
+                    <button class="sub-tab deep-sub" data-dmode="delivery_categories">{{ t('deep_delivery') }}</button>
+                </div>
+                <div class="table-toolbar">
+                    <button class="btn btn-sm btn-primary export-btn" data-table="deepSalesTable" data-sheet="DeepSales">{{ t('export_excel') }}</button>
+                </div>
+                <div class="chart-card hidden" id="deepSalesChartWrap" style="margin-bottom:1rem">
+                    <canvas id="chartDeepDelivery"></canvas>
+                </div>
+                <div class="table-wrap"><table id="deepSalesTable" class="data-table"></table></div>
+            </div>
         </div>
     </main>
 </div>
@@ -178,6 +200,7 @@
 {% endblock %}
 {% block scripts %}
 <script>
+window.DEEP_NO_DELIVERY = {{ t('deep_no_delivery')|tojson }};
 window.TABLE_LABELS = {
     rank: {{ t('col_rank')|tojson }}, name: {{ t('col_name')|tojson }}, employee: {{ t('col_employee')|tojson }},
     branch: {{ t('col_branch')|tojson }}, shift: {{ t('col_shift')|tojson }}, top_type: {{ t('col_top_type')|tojson }},
@@ -198,7 +221,9 @@ window.TABLE_LABELS = {
     prev_sales: {{ t('col_prev_sales')|tojson }}, curr_sales: {{ t('col_curr_sales')|tojson }}, sales_delta: {{ t('col_sales_delta')|tojson }},
     prev_recs: {{ t('col_prev_recs')|tojson }}, curr_recs: {{ t('col_curr_recs')|tojson }},
     prev_avg: {{ t('col_prev_avg')|tojson }}, curr_avg: {{ t('col_curr_avg')|tojson }},
-    avg_delta: {{ t('col_avg_delta')|tojson }}, insight: {{ t('col_insight')|tojson }}
+    avg_delta: {{ t('col_avg_delta')|tojson }}, insight: {{ t('col_insight')|tojson }},
+    sales_type: {{ t('col_sales_type')|tojson }}, item: {{ t('col_item')|tojson }},
+    rank_in_group: {{ t('col_rank_in_group')|tojson }}, subcategory: {{ t('col_subcat2')|tojson }}
 };
 </script>
 <script src="/static/js/dashboard.js?v={{ app_version }}"></script>

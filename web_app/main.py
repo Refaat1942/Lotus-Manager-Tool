@@ -20,7 +20,7 @@ from core.utils import decrypt_master_file
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
-APP_VERSION = os.environ.get("APP_VERSION", "20260706.5")
+APP_VERSION = os.environ.get("APP_VERSION", "20260706.6")
 app = FastAPI(title="Lotus Manager Tool Web")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "lotus-web-secret-change-me-2026"))
 
@@ -134,6 +134,17 @@ async def set_filters(request: Request):
 async def dashboard_data(request: Request):
     session = get_session(request)
     return JSONResponse(get_dashboard_data(session["id"]))
+
+
+@app.get("/api/deep-sales")
+@require_login
+async def deep_sales_data(request: Request):
+    session = get_session(request)
+    state = get_user_state(session["id"])
+    master_df = get_master_df()
+    state["analytics"].set_divisor(state["daily_avg"])
+    result = state["analytics"].deep_sales_analysis(master_df)
+    return JSONResponse(result)
 
 
 @app.get("/api/stagnant")

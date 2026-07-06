@@ -24,12 +24,13 @@ const EMP_MODES = {
 };
 
 const LOCALE = 'en-US';
-const INT_COLS = new Set(['working_days', 'hour', 'rank', 'alt_qty', 'stagnant_code', 'code']);
+const INT_COLS = new Set(['working_days', 'hour', 'rank', 'rank_in_group', 'alt_qty', 'stagnant_code', 'code']);
 const COUNT_COLS = new Set(['receipts', 'prev_recs', 'curr_recs', 'materials', 'qty']);
 const NUMERIC_COLS = new Set([
     'sales', 'avg', 'avg_receipt', 'materials_per_receipt', 'total_materials',
     'working_days', 'receipts', 'qty', 'materials', 'p1_sales', 'p2_sales',
     'prev_sales', 'curr_sales', 'prev_recs', 'curr_recs', 'prev_avg', 'curr_avg', 'alt_qty',
+    'rank_in_group',
 ]);
 
 function parseNum(s) {
@@ -531,7 +532,7 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
 }));
 
 let pendingSubcatMode = false;
-document.querySelectorAll('.sub-tab').forEach(tab => tab.addEventListener('click', () => {
+document.querySelectorAll('.sub-tab[data-emode]').forEach(tab => tab.addEventListener('click', () => {
     document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     const mode = tab.dataset.emode;
@@ -559,6 +560,61 @@ document.getElementById('analyzeStagnant')?.addEventListener('click', async () =
     buildTableHeader('stagTable', STATIC_TABLES.stagTable);
     fillTable('stagTable', data.rows, r =>
         `<tr>${numCell(r.stagnant_code)}${arCell(r.stagnant_drug)}${numCell(r.alt_code)}${arCell(r.alt_drug)}${numCell(displayNum('alt_qty', r.alt_qty))}${arCell(r.group_match)}</tr>`);
+});
+
+let deepSalesCache = null;
+let activeDeepMode = 'sales_type_category';
+
+function renderDeepSalesMode(mode) {
+    if (!deepSalesCache?.ok) return;
+    const payload = deepSalesCache[mode];
+    if (!payload) return;
+    renderDynamicTable('deepSalesTable', payload, false);
+    const chartWrap = document.getElementById('deepSalesChartWrap');
+    if (mode === 'delivery_categories' && deepSalesCache.chart?.labels?.length) {
+        chartWrap.classList.remove('hidden');
+        drawChart('chartDeepDelivery', 'bar', deepSalesCache.chart.labels, deepSalesCache.chart.values, 'Top Delivery Categories', true);
+    } else if (chartWrap) {
+        chartWrap.classList.add('hidden');
+    }
+}
+
+async function loadDeepSales() {
+    const status = document.getElementById('deepSalesStatus');
+    if (status) status.textContent = 'Loading...';
+    const res = await fetch('/api/deep-sales');
+    const data = await res.json();
+    if (!data.ok) {
+        if (status) status.textContent = data.error || 'Failed to load';
+        deepSalesCache = null;
+        document.getElementById('deepSalesInsights')?.classList.add('hidden');
+        return;
+    }
+    deepSalesCache = data;
+    if (status) status.textContent = data.delivery_channels?.length
+        ? `Channels: ${data.delivery_channels.join(', ')}` : '';
+    const ins = document.getElementById('deepSalesInsights');
+    if (ins) {
+        ins.classList.remove('hidden');
+        const items = (data.insights || []).map(i => `<li dir="auto">${esc(i)}</li>`).join('');
+        ins.innerHTML = items ? `<strong>💡 Insights</strong><ul class="ai-rec-list">${items}</ul>` : '';
+        if (!data.delivery_categories?.rows?.length) {
+            ins.innerHTML += `<p class="status-text">${esc(window.DEEP_NO_DELIVERY || '')}</p>`;
+        }
+    }
+    renderDeepSalesMode(activeDeepMode);
+}
+
+document.getElementById('loadDeepSales')?.addEventListener('click', loadDeepSales);
+document.querySelectorAll('.deep-sub').forEach(tab => tab.addEventListener('click', () => {
+    document.querySelectorAll('.deep-sub').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    activeDeepMode = tab.dataset.dmode;
+    if (deepSalesCache) renderDeepSalesMode(activeDeepMode);
+    else loadDeepSales();
+}));
+document.querySelector('.tab[data-tab="deepsales"]')?.addEventListener('click', () => {
+    if (!deepSalesCache) loadDeepSales();
 });
 
 document.getElementById('runDateCompare')?.addEventListener('click', runDateCompare);

@@ -542,6 +542,152 @@ class AnalyticsService:
             "kpis": kpis, "rows": rows,
         }
 
+    _DELIVERY_KEYWORDS = (
+        "instashop", "insta shop", "talabat", "طلبات", "hunger", "delivery", "deliver",
+        "digital", "online", "visa", "carriage", "noon", "fizzy", "app", "ecommerce",
+        "normal delivery", "ديليفري", "انستا",
+    )
+
+    def _prepare_master_merged(self, master_df):
+        df = self.p.df
+        if df is None or master_df is None or master_df.empty or not self.p.c_desc:
+            return None
+        temp = df.copy()
+        master_sub = master_df[["Description", "SubCat1", "SubCat2", "GranularCat"]].copy()
+        master_sub["Description"] = master_sub["Description"].astype(str).str.strip()
+        temp[self.p.c_desc] = temp[self.p.c_desc].astype(str).str.strip()
+        merged = temp.merge(master_sub, left_on=self.p.c_desc, right_on="Description", how="left")
+        merged["SubCat1"] = merged["SubCat1"].fillna("Uncategorized").astype(str).str.strip()
+        merged["SubCat2"] = merged["SubCat2"].fillna("Uncategorized").astype(str).str.strip()
+        merged["SalesType"] = (
+            merged[self.p.c_cat].astype(str).str.strip() if self.p.c_cat else "All Sales"
+        )
+        merged = merged[merged[self.p.c_price] > 0]
+        return merged if not merged.empty else None
+
+    def _is_delivery_type(self, sales_type):
+        s = str(sales_type).lower()
+        return any(k in s for k in self._DELIVERY_KEYWORDS)
+
+    def deep_sales_analysis(self, master_df):
+        merged = self._prepare_master_merged(master_df)
+        if merged is None:
+            return {"ok": False, "error": "Upload master data (.lotusdb) and sales file with item descriptions."}
+
+        price, qty, desc = self.p.c_price, self.p.c_qty, self.p.c_desc
+
+        g1 = merged.groupby(["SalesType", "SubCat1"], as_index=False).agg(
+            **{"sales_raw": (price, "sum"), "qty_raw": (qty, "sum")}
+        )
+        g1["type_total"] = g1.groupby("SalesType")["sales_raw"].transform("sum")
+        g1 = g1[g1["sales_raw"] > 0].sort_values(["SalesType", "sales_raw"], ascending=[True, False])
+        g1["rank"] = g1.groupby("SalesType").cumcount() + 1
+        rows_type_cat = []
+        for _, r in g1.iterrows():
+            pct = (r["sales_raw"] / r["type_total"] * 100) if r["type_total"] > 0 else 0
+            rows_type_cat.append({
+                "sales_type": web_text(r["SalesType"]),
+                "category": web_text(r["SubCat1"]),
+                "rank_in_group": int(r["rank"]),
+                "sales": self._d2(r["sales_raw"] / self.div),
+                "qty": self._d2(r["qty_raw"] / self.div),
+                "sales_pct": f"{pct:.1f}%",
+            })
+
+        g2 = merged.groupby(["SubCat1", "SubCat2"], as_index=False).agg(
+            **{"sales_raw": (price, "sum"), "qty_raw": (qty, "sum")}
+        )
+        g2["cat_total"] = g2.groupby("SubCat1")["sales_raw"].transform("sum")
+        g2 = g2[g2["sales_raw"] > 0].sort_values(["SubCat1", "sales_raw"], ascending=[True, False])
+        g2["rank"] = g2.groupby("SubCat1").cumcount() + 1
+        rows_cat_sub = []
+        for _, r in g2.iterrows():
+            pct = (r["sales_raw"] / r["cat_total"] * 100) if r["cat_total"] > 0 else 0
+            rows_cat_sub.append({
+                "category": web_text(r["SubCat1"]),
+                "subcategory": web_text(r["SubCat2"]),
+                "rank_in_group": int(r["rank"]),
+                "sales": self._d2(r["sales_raw"] / self.div),
+                "qty": self._d2(r["qty_raw"] / self.div),
+                "sales_pct": f"{pct:.1f}%",
+            })
+
+        item_grp = merged.groupby(["SubCat1", "SubCat2", desc], as_index=False).agg(
+            **{"sales_raw": (price, "sum"), "qty_raw": (qty, "sum")}
+        )
+        item_grp = item_grp.sort_values(["SubCat1", "SubCat2", "sales_raw"], ascending=[True, True, False])
+        item_grp["rank"] = item_grp.groupby(["SubCat1", "SubCat2"]).cumcount() + 1
+        rows_top_items = []
+        for _, r in item_grp[item_grp["rank"] <= 5].iterrows():
+            rows_top_items.append({
+                "category": web_text(r["SubCat1"]),
+                "subcategory": web_text(r["SubCat2"]),
+                "rank_in_group": int(r["rank"]),
+                "item": web_text(r[desc]),
+                "sales": self._d2(r["sales_raw"] / self.div),
+                "qty": self._d2(r["qty_raw"] / self.div),
+            })
+
+        delivery_types = sorted({t for t in merged["SalesType"].unique() if self._is_delivery_type(t)})
+        deliv = merged[merged["SalesType"].isin(delivery_types)] if delivery_types else merged.iloc[0:0]
+        rows_delivery = []
+        chart_labels, chart_values = [], []
+        if not deliv.empty:
+            g4 = deliv.groupby(["SalesType", "SubCat1"], as_index=False).agg(
+                **{"sales_raw": (price, "sum"), "qty_raw": (qty, "sum")}
+            )
+            g4["channel_total"] = g4.groupby("SalesType")["sales_raw"].transform("sum")
+            g4 = g4[g4["sales_raw"] > 0].sort_values(["SalesType", "sales_raw"], ascending=[True, False])
+            g4["rank"] = g4.groupby("SalesType").cumcount() + 1
+            for _, r in g4.iterrows():
+                pct = (r["sales_raw"] / r["channel_total"] * 100) if r["channel_total"] > 0 else 0
+                rows_delivery.append({
+                    "sales_type": web_text(r["SalesType"]),
+                    "category": web_text(r["SubCat1"]),
+                    "rank_in_group": int(r["rank"]),
+                    "sales": self._d2(r["sales_raw"] / self.div),
+                    "qty": self._d2(r["qty_raw"] / self.div),
+                    "sales_pct": f"{pct:.1f}%",
+                })
+            top_deliv_cats = (
+                deliv.groupby("SubCat1")[price].sum().sort_values(ascending=False).head(8)
+            )
+            chart_labels = [web_text(x) for x in top_deliv_cats.index]
+            chart_values = [round(v / self.div, 2) for v in top_deliv_cats.values]
+
+        insights = []
+        if rows_type_cat:
+            top = rows_type_cat[0]
+            for st in sorted({r["sales_type"] for r in rows_type_cat}):
+                st_rows = [r for r in rows_type_cat if r["sales_type"] == st and r["rank_in_group"] == 1]
+                if st_rows:
+                    insights.append(f"{st}: top category is {st_rows[0]['category']} ({st_rows[0]['sales_pct']} of type sales)")
+        if delivery_types:
+            insights.append(f"Delivery/Digital channels detected: {', '.join(web_text(t) for t in delivery_types)}")
+
+        return {
+            "ok": True,
+            "insights": insights,
+            "delivery_channels": [web_text(t) for t in delivery_types],
+            "sales_type_category": {
+                "columns": ["sales_type", "category", "rank_in_group", "sales", "qty", "sales_pct"],
+                "rows": rows_type_cat,
+            },
+            "category_subcategory": {
+                "columns": ["category", "subcategory", "rank_in_group", "sales", "qty", "sales_pct"],
+                "rows": rows_cat_sub,
+            },
+            "top_items_subcategory": {
+                "columns": ["category", "subcategory", "rank_in_group", "item", "sales", "qty"],
+                "rows": rows_top_items,
+            },
+            "delivery_categories": {
+                "columns": ["sales_type", "category", "rank_in_group", "sales", "qty", "sales_pct"],
+                "rows": rows_delivery,
+            },
+            "chart": {"labels": chart_labels, "values": chart_values},
+        }
+
     def stagnant_analysis(self, master_df):
         df = self.p.df
         if df is None or master_df is None or master_df.empty:
