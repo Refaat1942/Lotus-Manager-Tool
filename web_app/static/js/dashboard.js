@@ -34,6 +34,29 @@ function numCell(v) { return `<td class="cell-center">${esc(v)}</td>`; }
 function arCell(v) { return `<td class="cell-center" dir="auto">${esc(v)}</td>`; }
 function rankCell(n) { return `<td class="cell-center cell-rank">${n}</td>`; }
 
+function aiRecCell(value, row) {
+    const items = (row?.recommendations || String(value || '').split(/\s\|\s/))
+        .map(s => String(s).trim())
+        .filter(Boolean);
+    if (!items.length) return `<td class="cell-ai-rec">—</td>`;
+    return `<td class="cell-ai-rec"><ul class="ai-rec-list">${items.map(i => `<li dir="auto">${esc(i)}</li>`).join('')}</ul></td>`;
+}
+
+function tierCell(v) {
+    const t = String(v || '');
+    let cls = 'tier-solid';
+    if (/star|متميز/i.test(t)) cls = 'tier-star';
+    else if (/needs|تحسين|training/i.test(t)) cls = 'tier-needs';
+    return `<td class="cell-center cell-tier ${cls}">${esc(v)}</td>`;
+}
+
+function dataCell(c, v, row) {
+    if (c === 'recommendation') return aiRecCell(v, row);
+    if (c === 'tier') return tierCell(v);
+    if (typeof v === 'number' || /^[\d,.]+$/.test(String(v))) return numCell(v);
+    return arCell(v);
+}
+
 function buildTableHeader(tableId, columnKeys, customLabels) {
     const table = document.getElementById(tableId);
     if (!table) return;
@@ -97,8 +120,7 @@ function renderDynamicTable(tableId, payload, withRank) {
         const tag = row.is_subtotal ? ' class="row-subtotal"' : '';
         let cells = withRank ? rankCell(i + 1) : '';
         cols.forEach(c => {
-            const v = row[c];
-            cells += (typeof v === 'number' || /^[\d,.]+$/.test(String(v))) ? numCell(v) : arCell(v);
+            cells += dataCell(c, row[c], row);
         });
         return `<tr${tag}>${cells}</tr>`;
     }).join('');

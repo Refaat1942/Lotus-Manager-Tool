@@ -97,6 +97,7 @@ TRANSLATIONS = {
         "col_curr_avg": "Curr Avg",
         "col_avg_delta": "Avg Δ %",
         "col_insight": "AI Trend Insight",
+        "col_rank": "#",
         "col_name": "Name",
         "col_employee": "Employee",
         "col_branch": "Branch",
