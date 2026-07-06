@@ -151,7 +151,7 @@
 
             <div class="tab-panel" id="tab-deepsales">
                 <div class="compare-controls">
-                    <button id="loadDeepSales" class="btn btn-purple">{{ t('deep_sales') }}</button>
+                    <button id="loadDeepSales" class="btn btn-purple">{{ t('deep_refresh') }}</button>
                 </div>
                 <div id="deepSalesStatus" class="status-text"></div>
                 <div id="deepSalesInsights" class="brief-card hidden"></div>
@@ -201,6 +201,9 @@
 {% block scripts %}
 <script>
 window.DEEP_NO_DELIVERY = {{ t('deep_no_delivery')|tojson }};
+window.DEEP_NO_ROWS = {{ t('deep_no_rows')|tojson }};
+window.DEEP_LOADING = {{ t('deep_loading')|tojson }};
+window.DEEP_INSIGHTS = {{ t('deep_insights')|tojson }};
 window.TABLE_LABELS = {
     rank: {{ t('col_rank')|tojson }}, name: {{ t('col_name')|tojson }}, employee: {{ t('col_employee')|tojson }},
     branch: {{ t('col_branch')|tojson }}, shift: {{ t('col_shift')|tojson }}, top_type: {{ t('col_top_type')|tojson }},

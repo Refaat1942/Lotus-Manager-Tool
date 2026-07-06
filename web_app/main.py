@@ -20,7 +20,7 @@ from core.utils import decrypt_master_file
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
-APP_VERSION = os.environ.get("APP_VERSION", "20260706.6")
+APP_VERSION = os.environ.get("APP_VERSION", "20260706.7")
 app = FastAPI(title="Lotus Manager Tool Web")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "lotus-web-secret-change-me-2026"))
 
@@ -141,10 +141,18 @@ async def dashboard_data(request: Request):
 async def deep_sales_data(request: Request):
     session = get_session(request)
     state = get_user_state(session["id"])
+    proc = state["processor"]
+    if proc.df is None or proc.df.empty:
+        return JSONResponse({"ok": False, "error": "Load sales data first."})
     master_df = get_master_df()
-    state["analytics"].set_divisor(state["daily_avg"])
-    result = state["analytics"].deep_sales_analysis(master_df)
-    return JSONResponse(result)
+    if master_df is None or master_df.empty:
+        return JSONResponse({"ok": False, "error": "Upload master data (.lotusdb) first."})
+    try:
+        state["analytics"].set_divisor(state["daily_avg"])
+        result = state["analytics"].deep_sales_analysis(master_df)
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 @app.get("/api/stagnant")

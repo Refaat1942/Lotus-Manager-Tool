@@ -550,13 +550,29 @@ class AnalyticsService:
 
     def _prepare_master_merged(self, master_df):
         df = self.p.df
-        if df is None or master_df is None or master_df.empty or not self.p.c_desc:
+        if df is None or df.empty or master_df is None or master_df.empty or not self.p.c_desc:
             return None
         temp = df.copy()
-        master_sub = master_df[["Description", "SubCat1", "SubCat2", "GranularCat"]].copy()
+        master_sub = master_df[["Material", "Description", "SubCat1", "SubCat2", "GranularCat"]].copy()
         master_sub["Description"] = master_sub["Description"].astype(str).str.strip()
-        temp[self.p.c_desc] = temp[self.p.c_desc].astype(str).str.strip()
-        merged = temp.merge(master_sub, left_on=self.p.c_desc, right_on="Description", how="left")
+        master_sub["Material"] = master_sub["Material"].astype(str).str.strip()
+        temp["_desc_key"] = temp[self.p.c_desc].astype(str).str.strip()
+        merged = temp.merge(
+            master_sub.drop_duplicates("Description"),
+            left_on="_desc_key",
+            right_on="Description",
+            how="left",
+        )
+        if self.p.c_item_code:
+            temp["_code_key"] = temp[self.p.c_item_code].astype(str).str.strip()
+            code_map = master_sub.drop_duplicates("Material").set_index("Material")
+            missing = merged["SubCat1"].isna()
+            if missing.any():
+                codes = temp.loc[missing, "_code_key"]
+                merged.loc[missing, "SubCat1"] = codes.map(code_map["SubCat1"])
+                merged.loc[missing, "SubCat2"] = codes.map(code_map["SubCat2"])
+                merged.loc[missing, "GranularCat"] = codes.map(code_map["GranularCat"])
+                merged.loc[missing, "Description"] = codes.map(code_map["Description"])
         merged["SubCat1"] = merged["SubCat1"].fillna("Uncategorized").astype(str).str.strip()
         merged["SubCat2"] = merged["SubCat2"].fillna("Uncategorized").astype(str).str.strip()
         merged["SalesType"] = (

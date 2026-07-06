@@ -192,6 +192,7 @@ function renderDynamicTable(tableId, payload, withRank) {
         buildTableHeader(tableId, cols, labels);
     }
     const tbody = document.querySelector(`#${tableId} tbody`);
+    if (!tbody) return;
     tbody.innerHTML = (payload.rows || []).map((row, i) => {
         const tag = row.is_subtotal ? ' class="row-subtotal"' : '';
         let cells = withRank ? rankCell(i + 1) : '';
@@ -386,7 +387,9 @@ async function applyLoadedOptions(options) {
 }
 
 async function refreshDashboard() {
-    const savedEmpMode = document.querySelector('.sub-tab.active')?.dataset.emode || activeEmpMode || 'overview';
+    const savedEmpMode = document.querySelector('.sub-tab[data-emode].active')?.dataset.emode || activeEmpMode || 'overview';
+    const deepTabActive = isDeepSalesTabActive();
+    deepSalesCache = null;
     const res = await fetch('/api/filters', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -408,6 +411,7 @@ async function refreshDashboard() {
         } else {
             activeEmpMode = 'overview';
         }
+        if (deepTabActive) await loadDeepSales(true);
     }
 }
 
@@ -501,6 +505,7 @@ document.getElementById('dataFile')?.addEventListener('change', async e => {
     const data = await res.json();
     if (data.ok) {
         document.getElementById('uploadStatus').textContent = '✓ Data loaded';
+        deepSalesCache = null;
         await applyLoadedOptions(data.options);
     } else {
         document.getElementById('uploadStatus').textContent = '✗ ' + data.error;
@@ -514,6 +519,10 @@ document.getElementById('masterFile')?.addEventListener('change', async e => {
     const res = await fetch('/api/upload-master', { method: 'POST', body: fd });
     const data = await res.json();
     document.getElementById('uploadStatus').textContent = data.ok ? `✓ Master: ${data.count} items` : '✗ ' + data.error;
+    if (data.ok) {
+        deepSalesCache = null;
+        if (isDeepSalesTabActive()) await loadDeepSales(true);
+    }
 });
 
 document.getElementById('applyFilters')?.addEventListener('click', refreshDashboard);
@@ -529,11 +538,12 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'deepsales') loadDeepSales(false);
 }));
 
 let pendingSubcatMode = false;
 document.querySelectorAll('.sub-tab[data-emode]').forEach(tab => tab.addEventListener('click', () => {
-    document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.sub-tab[data-emode]').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     const mode = tab.dataset.emode;
     if (EMP_MODES[mode]?.password) {
@@ -564,58 +574,93 @@ document.getElementById('analyzeStagnant')?.addEventListener('click', async () =
 
 let deepSalesCache = null;
 let activeDeepMode = 'sales_type_category';
+let deepSalesLoading = false;
+
+function isDeepSalesTabActive() {
+    return document.getElementById('tab-deepsales')?.classList.contains('active');
+}
+
+function setDeepSalesStatus(msg, isError) {
+    const status = document.getElementById('deepSalesStatus');
+    if (!status) return;
+    status.textContent = msg || '';
+    status.classList.toggle('status-error', !!isError);
+}
 
 function renderDeepSalesMode(mode) {
     if (!deepSalesCache?.ok) return;
     const payload = deepSalesCache[mode];
-    if (!payload) return;
+    if (!payload?.columns?.length) {
+        setDeepSalesStatus(window.DEEP_NO_ROWS || 'No rows for this view.', true);
+        return;
+    }
     renderDynamicTable('deepSalesTable', payload, false);
+    const rowCount = payload.rows?.length || 0;
+    setDeepSalesStatus(
+        rowCount
+            ? `${rowCount} rows · ${deepSalesCache.delivery_channels?.length ? 'Channels: ' + deepSalesCache.delivery_channels.join(', ') : ''}`.trim()
+            : (window.DEEP_NO_ROWS || 'No matching sales in current filters.'),
+        !rowCount
+    );
     const chartWrap = document.getElementById('deepSalesChartWrap');
     if (mode === 'delivery_categories' && deepSalesCache.chart?.labels?.length) {
-        chartWrap.classList.remove('hidden');
+        chartWrap?.classList.remove('hidden');
         drawChart('chartDeepDelivery', 'bar', deepSalesCache.chart.labels, deepSalesCache.chart.values, 'Top Delivery Categories', true);
     } else if (chartWrap) {
         chartWrap.classList.add('hidden');
     }
 }
 
-async function loadDeepSales() {
-    const status = document.getElementById('deepSalesStatus');
-    if (status) status.textContent = 'Loading...';
-    const res = await fetch('/api/deep-sales');
-    const data = await res.json();
-    if (!data.ok) {
-        if (status) status.textContent = data.error || 'Failed to load';
-        deepSalesCache = null;
-        document.getElementById('deepSalesInsights')?.classList.add('hidden');
+async function loadDeepSales(force) {
+    if (deepSalesLoading) return;
+    if (!force && deepSalesCache?.ok) {
+        renderDeepSalesMode(activeDeepMode);
         return;
     }
-    deepSalesCache = data;
-    if (status) status.textContent = data.delivery_channels?.length
-        ? `Channels: ${data.delivery_channels.join(', ')}` : '';
-    const ins = document.getElementById('deepSalesInsights');
-    if (ins) {
-        ins.classList.remove('hidden');
-        const items = (data.insights || []).map(i => `<li dir="auto">${esc(i)}</li>`).join('');
-        ins.innerHTML = items ? `<strong>💡 Insights</strong><ul class="ai-rec-list">${items}</ul>` : '';
-        if (!data.delivery_categories?.rows?.length) {
-            ins.innerHTML += `<p class="status-text">${esc(window.DEEP_NO_DELIVERY || '')}</p>`;
+    deepSalesLoading = true;
+    setDeepSalesStatus(window.DEEP_LOADING || 'Loading analysis...', false);
+    try {
+        const res = await fetch('/api/deep-sales');
+        let data;
+        try {
+            data = await res.json();
+        } catch (_) {
+            throw new Error(`Server error (${res.status})`);
         }
+        if (!res.ok || !data.ok) {
+            deepSalesCache = null;
+            document.getElementById('deepSalesInsights')?.classList.add('hidden');
+            setDeepSalesStatus(data.error || data.detail || 'Failed to load deep sales analysis', true);
+            return;
+        }
+        deepSalesCache = data;
+        const ins = document.getElementById('deepSalesInsights');
+        if (ins) {
+            ins.classList.remove('hidden');
+            const items = (data.insights || []).map(i => `<li dir="auto">${esc(i)}</li>`).join('');
+            ins.innerHTML = items ? `<strong>💡 ${esc(window.DEEP_INSIGHTS || 'Key Insights')}</strong><ul class="ai-rec-list">${items}</ul>` : '';
+            if (!data.delivery_categories?.rows?.length) {
+                ins.innerHTML += `<p class="status-text">${esc(window.DEEP_NO_DELIVERY || '')}</p>`;
+            }
+        }
+        renderDeepSalesMode(activeDeepMode);
+    } catch (err) {
+        deepSalesCache = null;
+        document.getElementById('deepSalesInsights')?.classList.add('hidden');
+        setDeepSalesStatus(err.message || 'Failed to load deep sales analysis', true);
+    } finally {
+        deepSalesLoading = false;
     }
-    renderDeepSalesMode(activeDeepMode);
 }
 
-document.getElementById('loadDeepSales')?.addEventListener('click', loadDeepSales);
+document.getElementById('loadDeepSales')?.addEventListener('click', () => loadDeepSales(true));
 document.querySelectorAll('.deep-sub').forEach(tab => tab.addEventListener('click', () => {
     document.querySelectorAll('.deep-sub').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     activeDeepMode = tab.dataset.dmode;
-    if (deepSalesCache) renderDeepSalesMode(activeDeepMode);
-    else loadDeepSales();
+    if (deepSalesCache?.ok) renderDeepSalesMode(activeDeepMode);
+    else loadDeepSales(false);
 }));
-document.querySelector('.tab[data-tab="deepsales"]')?.addEventListener('click', () => {
-    if (!deepSalesCache) loadDeepSales();
-});
 
 document.getElementById('runDateCompare')?.addEventListener('click', runDateCompare);
 document.getElementById('trendFile')?.addEventListener('change', e => { if (e.target.files[0]) loadTrendCompare(e.target.files[0]); });
