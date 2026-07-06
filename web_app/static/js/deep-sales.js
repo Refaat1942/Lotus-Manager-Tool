@@ -35,7 +35,7 @@
         const rows = (payload.rows || []).map(row => {
             const cells = cols.map(c => {
                 const v = row[c];
-                if (c === 'sales' || c === 'qty' || c === 'rank_in_group') return numCell(v);
+                if (c === 'sales' || c === 'qty' || c === 'rank_in_group' || c === 'unique_items') return numCell(v);
                 return arCell(v);
             }).join('');
             return `<tr>${cells}</tr>`;
@@ -59,12 +59,22 @@
         if (!data.delivery_categories?.rows?.length) {
             ins.innerHTML += `<p class="status-text">${esc(window.DEEP_NO_DELIVERY || '')}</p>`;
         }
+        if (!data.digital_subchannel_summary?.rows?.length) {
+            ins.innerHTML += `<p class="status-text">${esc(window.DEEP_NO_DIGITAL || '')}</p>`;
+        }
     }
+
+    const CHART_MODES = {
+        delivery_categories: { key: 'chart', label: 'Top Delivery Categories' },
+        digital_subchannel_summary: { key: 'digital_chart', label: 'Digital Sub-Channels Sales' },
+    };
 
     function renderChart(data) {
         const wrap = document.getElementById('deepSalesChartWrap');
         if (!wrap) return;
-        if (mode !== 'delivery_categories' || !data.chart?.labels?.length || typeof Chart === 'undefined') {
+        const cfg = CHART_MODES[mode];
+        const chartData = cfg ? data[cfg.key] : null;
+        if (!cfg || !chartData?.labels?.length || typeof Chart === 'undefined') {
             wrap.classList.add('hidden');
             return;
         }
@@ -77,8 +87,8 @@
         window.__deepChart = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: data.chart.labels,
-                datasets: [{ label: 'Top Delivery Categories', data: data.chart.values, backgroundColor: '#9b59b6' }],
+                labels: chartData.labels,
+                datasets: [{ label: cfg.label, data: chartData.values, backgroundColor: '#9b59b6' }],
             },
             options: { responsive: true, indexAxis: 'y' },
         });
@@ -89,6 +99,7 @@
         const payload = cache[mode];
         if (!payload?.columns?.length) {
             status(window.DEEP_NO_ROWS || 'No rows for this view.', true);
+            document.getElementById('deepSalesChartWrap')?.classList.add('hidden');
             return;
         }
         if (!renderTable(payload)) {
@@ -96,8 +107,10 @@
             return;
         }
         const n = payload.rows?.length || 0;
-        const ch = cache.delivery_channels?.length ? ` · Channels: ${cache.delivery_channels.join(', ')}` : '';
-        status(n ? `${n} rows${ch}` : (window.DEEP_NO_ROWS || 'No matching sales.'), !n);
+        const parts = [];
+        if (cache.digital_subchannels?.length) parts.push(`Digital: ${cache.digital_subchannels.join(', ')}`);
+        else if (cache.delivery_channels?.length) parts.push(`Channels: ${cache.delivery_channels.join(', ')}`);
+        status(n ? `${n} rows${parts.length ? ' · ' + parts.join('') : ''}` : (window.DEEP_NO_ROWS || 'No matching sales.'), !n);
         renderChart(cache);
     }
 

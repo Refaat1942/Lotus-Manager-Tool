@@ -160,6 +160,9 @@
                     <button class="sub-tab deep-sub" data-dmode="category_subcategory">{{ t('deep_cat_subcat') }}</button>
                     <button class="sub-tab deep-sub" data-dmode="top_items_subcategory">{{ t('deep_top_items') }}</button>
                     <button class="sub-tab deep-sub" data-dmode="delivery_categories">{{ t('deep_delivery') }}</button>
+                    <button class="sub-tab deep-sub" data-dmode="digital_subchannel_summary">{{ t('deep_digital_subs') }}</button>
+                    <button class="sub-tab deep-sub" data-dmode="digital_subchannel_categories">{{ t('deep_digital_cat') }}</button>
+                    <button class="sub-tab deep-sub" data-dmode="digital_subchannel_items">{{ t('deep_digital_items') }}</button>
                 </div>
                 <div class="table-toolbar">
                     <button class="btn btn-sm btn-primary export-btn" data-table="deepSalesTable" data-sheet="DeepSales">{{ t('export_excel') }}</button>
@@ -201,6 +204,7 @@
 {% block scripts %}
 <script>
 window.DEEP_NO_DELIVERY = {{ t('deep_no_delivery')|tojson }};
+window.DEEP_NO_DIGITAL = {{ t('deep_no_digital')|tojson }};
 window.DEEP_NO_ROWS = {{ t('deep_no_rows')|tojson }};
 window.DEEP_LOADING = {{ t('deep_loading')|tojson }};
 window.DEEP_INSIGHTS = {{ t('deep_insights')|tojson }};
@@ -226,7 +230,8 @@ window.TABLE_LABELS = {
     prev_avg: {{ t('col_prev_avg')|tojson }}, curr_avg: {{ t('col_curr_avg')|tojson }},
     avg_delta: {{ t('col_avg_delta')|tojson }}, insight: {{ t('col_insight')|tojson }},
     sales_type: {{ t('col_sales_type')|tojson }}, item: {{ t('col_item')|tojson }},
-    rank_in_group: {{ t('col_rank_in_group')|tojson }}, subcategory: {{ t('col_subcat2')|tojson }}
+    rank_in_group: {{ t('col_rank_in_group')|tojson }}, subcategory: {{ t('col_subcat2')|tojson }},
+    sub_channel: {{ t('col_sub_channel')|tojson }}, unique_items: {{ t('col_unique_items')|tojson }}
 };
 </script>
 <script src="/static/js/dashboard.js?v={{ app_version }}"></script>

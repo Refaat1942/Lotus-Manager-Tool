@@ -545,7 +545,18 @@ class AnalyticsService:
     _DELIVERY_KEYWORDS = (
         "instashop", "insta shop", "talabat", "طلبات", "hunger", "delivery", "deliver",
         "digital", "online", "visa", "carriage", "noon", "fizzy", "app", "ecommerce",
-        "normal delivery", "ديليفري", "انستا",
+        "normal delivery", "ديليفري", "انستا", "chefaa", "شفاء",
+    )
+
+    _SUB_CHANNEL_RULES = (
+        ("Instashop", ("instashop", "insta shop", "insta-shop", "انستا", "انستا شوب")),
+        ("Talabat", ("talabat", "طلبات")),
+        ("Chefaa", ("chefaa", "شفاء")),
+        ("HungerStation", ("hungerstation", "hunger station", "هنقر")),
+        ("Carriage", ("carriage", "كرriage")),
+        ("Noon", ("noon", "نون")),
+        ("Fizzy", ("fizzy",)),
+        ("Normal Delivery", ("normal delivery", "ديليفري")),
     )
 
     def _prepare_master_merged(self, master_df):
@@ -577,12 +588,35 @@ class AnalyticsService:
         temp["SalesType"] = (
             temp[self.p.c_cat].astype(str).str.strip() if self.p.c_cat else "All Sales"
         )
+        temp["SubChannel"] = self._assign_sub_channels(temp)
         temp = temp[temp[self.p.c_price] > 0]
         return temp if not temp.empty else None
 
     def _is_delivery_type(self, sales_type):
         s = str(sales_type).lower()
         return any(k in s for k in self._DELIVERY_KEYWORDS)
+
+    def _assign_sub_channels(self, df):
+        customer = (
+            df[self.p.c_customer].astype(str).str.strip()
+            if self.p.c_customer and self.p.c_customer in df.columns
+            else pd.Series("", index=df.index)
+        )
+        sales_type = df["SalesType"].astype(str).str.strip()
+        combined = (customer + " " + sales_type).str.lower()
+        channels = pd.Series("", index=df.index, dtype=str)
+        for label, keys in self._SUB_CHANNEL_RULES:
+            mask = pd.Series(False, index=df.index)
+            for key in keys:
+                mask |= combined.str.contains(key, regex=False, na=False)
+            channels = channels.mask(mask & (channels == ""), label)
+        digital_mask = sales_type.apply(self._is_delivery_type) & (channels == "")
+        channels = channels.mask(digital_mask, sales_type[digital_mask].map(web_text))
+        if self.p.c_customer:
+            valid_cust = customer.str.len() > 0 & ~customer.str.lower().isin(["nan", "none", ""])
+            named = sales_type.apply(self._is_delivery_type) & (channels == "") & valid_cust
+            channels = channels.mask(named, customer[named].map(lambda x: web_text(str(x)[:80])))
+        return channels
 
     def deep_sales_analysis(self, master_df):
         merged = self._prepare_master_merged(master_df)
@@ -670,6 +704,77 @@ class AnalyticsService:
             chart_labels = [web_text(x) for x in top_deliv_cats.index]
             chart_values = [round(v / self.div, 2) for v in top_deliv_cats.values]
 
+        digital = merged[
+            merged["SalesType"].apply(self._is_delivery_type) | merged["SubChannel"].astype(str).str.strip().ne("")
+        ].copy()
+        digital = digital[digital["SubChannel"].astype(str).str.strip().ne("")]
+        rows_digital_summary = []
+        rows_digital_cats = []
+        rows_digital_items = []
+        digital_chart_labels, digital_chart_values = [], []
+        digital_subchannels = []
+
+        if not digital.empty:
+            dig_total = float(digital[price].sum())
+            sc_totals = digital.groupby("SubChannel")[price].sum().sort_values(ascending=False)
+            digital_subchannels = [web_text(x) for x in sc_totals.index]
+
+            top_cat_map = (
+                digital.groupby(["SubChannel", "SubCat1"])[price].sum()
+                .reset_index(name="cat_sales")
+                .sort_values(["SubChannel", "cat_sales"], ascending=[True, False])
+                .drop_duplicates("SubChannel", keep="first")
+                .set_index("SubChannel")["SubCat1"]
+            )
+            item_counts = digital.groupby("SubChannel")[desc].nunique()
+
+            for sc, sc_sales in sc_totals.items():
+                sc_qty = float(digital.loc[digital["SubChannel"] == sc, qty].sum())
+                pct = (sc_sales / dig_total * 100) if dig_total > 0 else 0
+                rows_digital_summary.append({
+                    "sub_channel": web_text(sc),
+                    "sales": self._d2(sc_sales / self.div),
+                    "qty": self._d2(sc_qty / self.div),
+                    "unique_items": self._d0(item_counts.get(sc, 0)),
+                    "top_category": web_text(top_cat_map.get(sc, "N/A")),
+                    "sales_pct": f"{pct:.1f}%",
+                })
+            digital_chart_labels = [r["sub_channel"] for r in rows_digital_summary[:10]]
+            digital_chart_values = [round(v / self.div, 2) for v in sc_totals.head(10).values]
+
+            g_sc = digital.groupby(["SubChannel", "SubCat1"], as_index=False).agg(
+                **{"sales_raw": (price, "sum"), "qty_raw": (qty, "sum")}
+            )
+            g_sc["sc_total"] = g_sc.groupby("SubChannel")["sales_raw"].transform("sum")
+            g_sc = g_sc[g_sc["sales_raw"] > 0].sort_values(["SubChannel", "sales_raw"], ascending=[True, False])
+            g_sc["rank"] = g_sc.groupby("SubChannel").cumcount() + 1
+            for _, r in g_sc[g_sc["rank"] <= 25].iterrows():
+                pct = (r["sales_raw"] / r["sc_total"] * 100) if r["sc_total"] > 0 else 0
+                rows_digital_cats.append({
+                    "sub_channel": web_text(r["SubChannel"]),
+                    "category": web_text(r["SubCat1"]),
+                    "rank_in_group": int(r["rank"]),
+                    "sales": self._d2(r["sales_raw"] / self.div),
+                    "qty": self._d2(r["qty_raw"] / self.div),
+                    "sales_pct": f"{pct:.1f}%",
+                })
+
+            dig_items = digital.groupby(["SubChannel", desc, "SubCat1", "SubCat2"], as_index=False).agg(
+                **{"sales_raw": (price, "sum"), "qty_raw": (qty, "sum")}
+            )
+            dig_items = dig_items.sort_values(["SubChannel", "sales_raw"], ascending=[True, False])
+            dig_items["rank"] = dig_items.groupby("SubChannel").cumcount() + 1
+            for _, r in dig_items[dig_items["rank"] <= 10].iterrows():
+                rows_digital_items.append({
+                    "sub_channel": web_text(r["SubChannel"]),
+                    "rank_in_group": int(r["rank"]),
+                    "item": web_text(r[desc]),
+                    "category": web_text(r["SubCat1"]),
+                    "subcategory": web_text(r["SubCat2"]),
+                    "sales": self._d2(r["sales_raw"] / self.div),
+                    "qty": self._d2(r["qty_raw"] / self.div),
+                })
+
         insights = []
         if rows_type_cat:
             top = rows_type_cat[0]
@@ -679,11 +784,20 @@ class AnalyticsService:
                     insights.append(f"{st}: top category is {st_rows[0]['category']} ({st_rows[0]['sales_pct']} of type sales)")
         if delivery_types:
             insights.append(f"Delivery/Digital channels detected: {', '.join(web_text(t) for t in delivery_types)}")
+        if digital_subchannels:
+            insights.append(f"Digital sub-channels (Customer Name): {', '.join(digital_subchannels)}")
+            if rows_digital_summary:
+                top_sc = rows_digital_summary[0]
+                insights.append(
+                    f"Top digital sub-channel: {top_sc['sub_channel']} ({top_sc['sales_pct']} of digital sales)"
+                )
 
         return {
             "ok": True,
             "insights": insights,
             "delivery_channels": [web_text(t) for t in delivery_types],
+            "digital_subchannels": digital_subchannels,
+            "has_customer_col": bool(self.p.c_customer),
             "sales_type_category": {
                 "columns": ["sales_type", "category", "rank_in_group", "sales", "qty", "sales_pct"],
                 "rows": rows_type_cat,
@@ -700,7 +814,20 @@ class AnalyticsService:
                 "columns": ["sales_type", "category", "rank_in_group", "sales", "qty", "sales_pct"],
                 "rows": rows_delivery,
             },
+            "digital_subchannel_summary": {
+                "columns": ["sub_channel", "sales", "qty", "unique_items", "top_category", "sales_pct"],
+                "rows": rows_digital_summary,
+            },
+            "digital_subchannel_categories": {
+                "columns": ["sub_channel", "category", "rank_in_group", "sales", "qty", "sales_pct"],
+                "rows": rows_digital_cats,
+            },
+            "digital_subchannel_items": {
+                "columns": ["sub_channel", "rank_in_group", "item", "category", "subcategory", "sales", "qty"],
+                "rows": rows_digital_items,
+            },
             "chart": {"labels": chart_labels, "values": chart_values},
+            "digital_chart": {"labels": digital_chart_labels, "values": digital_chart_values},
         }
 
     def stagnant_analysis(self, master_df):

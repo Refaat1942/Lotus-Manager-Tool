@@ -29,6 +29,7 @@ class DataProcessor:
         self.c_bun = get_col(df, ["BUn", "Unit", "SU"])
         self.c_pos = get_col(df, ["POS no.", "POS"])
         self.c_branch = get_col(df, ["Branch Name", "Branch", "Site", "Plant"])
+        self.c_customer = get_col(df, ["Customer Name", "Customer", "Sold-to Party", "Sold To Party", "Customer Description"])
         self.c_item_code = get_col(df, ["Item Code", "Material", "Code", "رقم الصنف"])
         self.c_pos_name = get_col(df, ["Position Name", "الوظيفة"])
 
@@ -37,6 +38,7 @@ class DataProcessor:
             "cat": self.c_cat, "rec": self.c_rec, "mat": self.c_mat,
             "desc": self.c_desc, "time": self.c_time, "date": self.c_date,
             "branch": self.c_branch, "item_code": self.c_item_code,
+            "customer": self.c_customer,
         }
 
         if not self.c_price or not self.c_name:
