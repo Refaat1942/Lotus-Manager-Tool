@@ -15,6 +15,24 @@ def fix_arabic(text):
     return get_display(reshaped_text)
 
 
+def format_number(value, decimals=2):
+    """Comma-separated number; negatives in accounting parentheses."""
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if decimals == 0:
+        n = round(n)
+        body = f"{abs(int(n)):,}"
+    else:
+        body = f"{abs(n):,.{decimals}f}"
+    return f"({body})" if n < 0 else body
+
+
+def format_int(value):
+    return format_number(value, decimals=0)
+
+
 def web_text(text):
     """For web/HTML — return raw UTF-8; browser handles Arabic shaping & RTL."""
     if pd.isna(text):

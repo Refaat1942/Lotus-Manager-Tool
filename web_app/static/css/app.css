@@ -389,12 +389,18 @@ a { color: var(--accent); text-decoration: none; }
     font-weight: 700;
 }
 
+.cell-num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+}
+
 .kpi-value {
     display: block;
     font-size: 1.75rem;
     font-weight: 800;
     margin-top: 0.35rem;
     letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
 }
 
 .period-badge {

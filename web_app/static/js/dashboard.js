@@ -23,14 +23,69 @@ const EMP_MODES = {
     ai: { api: 'ai', rank: true, cache: 'employee_ai' },
 };
 
-function fmt(n) {
+const LOCALE = 'en-US';
+const INT_COLS = new Set(['working_days', 'hour', 'rank', 'alt_qty', 'stagnant_code', 'code']);
+const COUNT_COLS = new Set(['receipts', 'prev_recs', 'curr_recs', 'materials', 'qty']);
+
+function parseNum(s) {
+    const t = String(s ?? '').trim();
+    if (!t || t === '—' || t === 'N/A') return NaN;
+    const neg = t.startsWith('(') && t.endsWith(')');
+    const n = parseFloat(t.replace(/[(),]/g, ''));
+    return neg ? -n : n;
+}
+
+function fmt(n, decimals = 2) {
     const v = Number(n);
-    if (n == null || Number.isNaN(v)) return '0';
-    return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (n == null || Number.isNaN(v)) return decimals === 0 ? '0' : '0.00';
+    const s = Math.abs(v).toLocaleString(LOCALE, {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+    });
+    return v < 0 ? `(${s})` : s;
+}
+
+function fmtInt(n) {
+    return fmt(n, 0);
+}
+
+function formatCellValue(col, v) {
+    if (v == null || v === '' || v === '---' || v === 'N/A') return v;
+    if (typeof v === 'string' && (/mins|%/.test(v) || v.includes(' %'))) return v;
+    const n = typeof v === 'number' ? v : parseNum(v);
+    if (Number.isNaN(n)) return v;
+    if (INT_COLS.has(col)) return fmtInt(n);
+    if (COUNT_COLS.has(col)) {
+        return Number.isInteger(n) || Math.abs(n - Math.round(n)) < 0.05 ? fmtInt(Math.round(n)) : fmt(n, 1);
+    }
+    if (col === 'materials_per_receipt' || col === 'total_materials') return fmt(n, 2);
+    return fmt(n, 2);
+}
+
+function formatInlineNumbers(text) {
+    return String(text).replace(/\d+(?:\.\d+)?/g, (match) => {
+        const n = Number(match);
+        if (Number.isNaN(n)) return match;
+        return match.includes('.') ? fmt(n, Math.min(match.split('.')[1].length, 2)) : fmtInt(n);
+    });
+}
+
+function fmtPct(n) {
+    const v = Number(n);
+    if (Number.isNaN(v)) return String(n);
+    const sign = v > 0 ? '+' : '';
+    return `${sign}${fmt(v, 1)}%`;
+}
+
+function fmtDelta(v) {
+    const t = String(v ?? '').trim();
+    if (!t) return '—';
+    const n = parseFloat(t.replace('%', ''));
+    return Number.isNaN(n) ? t : fmtPct(n);
 }
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function lbl(k) { return L[k] || k; }
-function numCell(v) { return `<td class="cell-center">${esc(v)}</td>`; }
+function numCell(v) { return `<td class="cell-center cell-num">${esc(String(v))}</td>`; }
 function arCell(v) { return `<td class="cell-center" dir="auto">${esc(v)}</td>`; }
 function rankCell(n) { return `<td class="cell-center cell-rank">${n}</td>`; }
 
@@ -39,7 +94,7 @@ function aiRecCell(value, row) {
         .map(s => String(s).trim())
         .filter(Boolean);
     if (!items.length) return `<td class="cell-ai-rec">—</td>`;
-    return `<td class="cell-ai-rec"><ul class="ai-rec-list">${items.map(i => `<li dir="auto">${esc(i)}</li>`).join('')}</ul></td>`;
+    return `<td class="cell-ai-rec"><ul class="ai-rec-list">${items.map(i => `<li dir="auto">${esc(formatInlineNumbers(i))}</li>`).join('')}</ul></td>`;
 }
 
 function tierCell(v) {
@@ -53,7 +108,15 @@ function tierCell(v) {
 function dataCell(c, v, row) {
     if (c === 'recommendation') return aiRecCell(v, row);
     if (c === 'tier') return tierCell(v);
-    if (typeof v === 'number' || /^[\d,.]+$/.test(String(v))) return numCell(v);
+    if (c === 'sales_delta' || c === 'avg_delta') {
+        const s = String(v ?? '');
+        if (s.includes('%')) return numCell(s);
+        const n = parseNum(s);
+        return numCell(Number.isNaN(n) ? s : fmtPct(n));
+    }
+    if (typeof v === 'number' || /^[\d,.()+-]+$/.test(String(v).trim())) {
+        return numCell(formatCellValue(c, v));
+    }
     return arCell(v);
 }
 
@@ -85,8 +148,8 @@ function sortTable(table, colIndex, th) {
     rows.sort((a, b) => {
         const va = a.cells[colIndex]?.textContent.trim() || '';
         const vb = b.cells[colIndex]?.textContent.trim() || '';
-        const na = parseFloat(va.replace(/,/g, '').replace(/[^\d.-]/g, ''));
-        const nb = parseFloat(vb.replace(/,/g, '').replace(/[^\d.-]/g, ''));
+        const na = parseNum(va);
+        const nb = parseNum(vb);
         if (!isNaN(na) && !isNaN(nb)) return asc ? na - nb : nb - na;
         return asc ? va.localeCompare(vb, undefined, { numeric: true }) : vb.localeCompare(va, undefined, { numeric: true });
     });
@@ -126,6 +189,28 @@ function renderDynamicTable(tableId, payload, withRank) {
     }).join('');
 }
 
+function chartNumOptions(horizontal, type) {
+    const base = {
+        indexAxis: horizontal ? 'y' : 'x',
+        responsive: true,
+        plugins: {
+            legend: { display: type === 'doughnut' || type === 'pie' },
+            tooltip: {
+                callbacks: {
+                    label: ctx => `${ctx.dataset.label || ''}: ${fmt(ctx.raw)}`,
+                },
+            },
+        },
+    };
+    if (type === 'doughnut' || type === 'pie') return base;
+    const tickFmt = v => fmt(v, 0);
+    base.scales = {
+        x: { ticks: { callback: horizontal ? undefined : tickFmt } },
+        y: { ticks: { callback: horizontal ? tickFmt : undefined } },
+    };
+    return base;
+}
+
 function drawChart(canvasId, type, labels, values, label, horizontal) {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return;
@@ -134,7 +219,7 @@ function drawChart(canvasId, type, labels, values, label, horizontal) {
     charts[canvasId] = new Chart(ctx, {
         type,
         data: { labels: labels || [], datasets: [{ label, data: values || [], backgroundColor: colors.slice(0, labels?.length || 0) }] },
-        options: { indexAxis: horizontal ? 'y' : 'x', responsive: true, plugins: { legend: { display: type === 'doughnut' || type === 'pie' } } }
+        options: chartNumOptions(horizontal, type),
     });
 }
 
@@ -151,7 +236,7 @@ function drawDualChart(canvasId, labels, p1, p2) {
                 { label: 'Period 2', data: p2, backgroundColor: '#27ae60' },
             ]
         },
-        options: { responsive: true }
+        options: chartNumOptions(false, 'bar'),
     });
 }
 
@@ -194,9 +279,9 @@ function renderDashboard(data) {
 
     const k = data.kpis;
     document.getElementById('kpiSales').textContent = fmt(k.total_sales);
-    document.getElementById('kpiReceipts').textContent = fmt(k.total_receipts);
+    document.getElementById('kpiReceipts').textContent = formatCellValue('receipts', k.total_receipts);
     document.getElementById('kpiAvg').textContent = fmt(k.avg_receipt);
-    document.getElementById('kpiPieces').textContent = fmt(k.total_pieces);
+    document.getElementById('kpiPieces').textContent = formatCellValue('qty', k.total_pieces);
     document.getElementById('periodBadge').textContent = `${k.period.start} → ${k.period.end} (${k.period.days} days)`;
 
     drawChart('chartMaterial', 'bar', data.material_chart.labels, data.material_chart.values, 'Material Groups');
@@ -220,9 +305,9 @@ function renderDashboard(data) {
     document.getElementById('execBrief').innerHTML =
         `<strong>⭐ Top Shift:</strong> <span dir="auto">${esc(ex.best_shift)}</span><br><strong>🔥 Peak Hours:</strong> ${esc((ex.peak_hours || []).join(' & ') || 'N/A')}`;
     fillTable('execShiftTable', ex.shifts_by_branch, r =>
-        `<tr>${arCell(r.branch)}${arCell(r.shift)}${numCell(fmt(r.sales))}${numCell(r.receipts)}${numCell(fmt(r.avg_receipt))}</tr>`);
+        `<tr>${arCell(r.branch)}${arCell(r.shift)}${numCell(fmt(r.sales))}${numCell(formatCellValue('receipts', r.receipts))}${numCell(fmt(r.avg_receipt))}</tr>`);
     fillTable('execPharTable', ex.pharmacists, r =>
-        `<tr>${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${numCell(fmt(r.sales))}${numCell(r.receipts)}${numCell(fmt(r.avg_receipt))}${arCell(r.top_sales_type)}${arCell(r.top_category)}${arCell(r.evaluation)}</tr>`);
+        `<tr>${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${numCell(fmt(r.sales))}${numCell(formatCellValue('receipts', r.receipts))}${numCell(fmt(r.avg_receipt))}${arCell(r.top_sales_type)}${arCell(r.top_category)}${arCell(r.evaluation)}</tr>`);
 
     if (validDates.length) {
         const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
@@ -337,7 +422,7 @@ async function runDateCompare() {
     drawDualChart('chartDateCompare', data.chart.labels, data.chart.p1, data.chart.p2);
     buildTableHeader('dateHourlyTable', STATIC_TABLES.dateHourlyTable);
     fillTable('dateHourlyTable', data.rows, r =>
-        `<tr>${numCell(r.hour)}${numCell(fmt(r.p1_sales))}${numCell(fmt(r.p2_sales))}${numCell(r.variance)}</tr>`);
+        `<tr>${numCell(r.hour)}${numCell(fmt(r.p1_sales))}${numCell(fmt(r.p2_sales))}${numCell(typeof r.variance === 'string' && r.variance.includes('%') ? r.variance : fmtPct(parseNum(r.variance)))}</tr>`);
 }
 
 async function loadTrendCompare(file) {
@@ -352,11 +437,11 @@ async function loadTrendCompare(file) {
         `<p class="period-badge">🔄 History (${h.prev_days} days: ${h.prev_start} to ${h.prev_end}) VS Current (${h.curr_days} days: ${h.curr_start} to ${h.curr_end})</p>
         <div class="kpi-row">${d.kpis.map(k => {
             const c = k.pct > 0 ? '#2ecc71' : (k.pct < 0 ? '#e74c3c' : 'gray');
-            return `<div class="kpi-card"><span class="kpi-label">${esc(k.title)}</span><span class="kpi-value" style="font-size:1rem">Old: ${fmt(k.old)} | New: ${fmt(k.new)}</span><span style="color:${c};font-weight:800">${k.pct > 0 ? '+' : ''}${k.pct.toFixed(1)}%</span></div>`;
+            return `<div class="kpi-card"><span class="kpi-label">${esc(k.title)}</span><span class="kpi-value" style="font-size:1rem">Old: ${fmt(k.old)} | New: ${fmt(k.new)}</span><span style="color:${c};font-weight:800">${fmtPct(k.pct)}</span></div>`;
         }).join('')}</div>`;
     buildTableHeader('trendTable', STATIC_TABLES.trendTable);
     fillTable('trendTable', d.rows, r =>
-        `<tr>${arCell(r.employee)}${numCell(fmt(r.prev_sales))}${numCell(fmt(r.curr_sales))}${numCell(r.sales_delta)}${numCell(fmt(r.prev_recs))}${numCell(fmt(r.curr_recs))}${numCell(fmt(r.prev_avg))}${numCell(fmt(r.curr_avg))}${numCell(r.avg_delta)}${arCell(r.insight)}</tr>`);
+        `<tr>${arCell(r.employee)}${numCell(fmt(r.prev_sales))}${numCell(fmt(r.curr_sales))}${numCell(r.sales_delta)}${numCell(formatCellValue('prev_recs', r.prev_recs))}${numCell(formatCellValue('curr_recs', r.curr_recs))}${numCell(fmt(r.prev_avg))}${numCell(fmt(r.curr_avg))}${numCell(r.avg_delta)}${arCell(r.insight)}</tr>`);
 }
 
 async function exportTable(tableId, sheetName) {
@@ -461,7 +546,7 @@ document.getElementById('analyzeStagnant')?.addEventListener('click', async () =
     const data = await res.json();
     buildTableHeader('stagTable', STATIC_TABLES.stagTable);
     fillTable('stagTable', data.rows, r =>
-        `<tr>${numCell(r.stagnant_code)}${arCell(r.stagnant_drug)}${numCell(r.alt_code)}${arCell(r.alt_drug)}${numCell(r.alt_qty)}${arCell(r.group_match)}</tr>`);
+        `<tr>${numCell(r.stagnant_code)}${arCell(r.stagnant_drug)}${numCell(r.alt_code)}${arCell(r.alt_drug)}${numCell(formatCellValue('alt_qty', r.alt_qty))}${arCell(r.group_match)}</tr>`);
 });
 
 document.getElementById('runDateCompare')?.addEventListener('click', runDateCompare);

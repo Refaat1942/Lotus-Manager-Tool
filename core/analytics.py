@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from core.utils import web_text, clean_item_code
+from core.utils import web_text, clean_item_code, format_number, format_int
 
 
 class AnalyticsService:
@@ -297,9 +297,9 @@ class AnalyticsService:
                 team_spd_val = round(team_avg_spd / self.div, 0)
 
                 if spd >= team_avg_spd * 1.15:
-                    efficiency.append(f"Sales/day: {spd_val:,.0f} — above team avg ({team_spd_val:,.0f})")
+                    efficiency.append(f"Sales/day: {format_int(spd_val)} — above team avg ({format_int(team_spd_val)})")
                 elif spd < team_avg_spd * 0.8:
-                    efficiency.append(f"Sales/day: {spd_val:,.0f} — below team avg ({team_spd_val:,.0f})")
+                    efficiency.append(f"Sales/day: {format_int(spd_val)} — below team avg ({format_int(team_spd_val)})")
 
                 shift_peers = combined[combined["Shift"] == shift]
                 if len(shift_peers) > 1:
@@ -319,11 +319,11 @@ class AnalyticsService:
 
                 if wd < avg_wd * 0.75:
                     if spd >= team_avg_spd:
-                        attendance.append(f"{wd} working days — strong output when present")
+                        attendance.append(f"{format_int(wd)} working days — strong output when present")
                     else:
-                        attendance.append(f"Only {wd} working days (team avg {avg_wd:.0f}) — low attendance")
+                        attendance.append(f"Only {format_int(wd)} working days (team avg {format_int(round(avg_wd))}) — low attendance")
                 elif wd >= period_days * 0.85 and spd < team_avg_spd * 0.85:
-                    attendance.append(f"{wd} working days but weak daily sales")
+                    attendance.append(f"{format_int(wd)} working days but weak daily sales")
 
                 if row["Avg"] >= avg_global * 1.1:
                     skills.append("Strong upselling — high avg receipt")
