@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from core.utils import (
-    get_col, clean_item_code, translate_position, classify_material, classify_shift
+    get_col, get_amount_col, clean_item_code, translate_position, classify_material, classify_shift
 )
 
 
@@ -15,7 +15,9 @@ class DataProcessor:
 
     def load_dataframe(self, df: pd.DataFrame):
         self.columns = {}
-        self.c_price = get_col(df, ["Sales Price", "Price", "Gross Sales", "Net Sales"])
+        self.c_price = get_amount_col(
+            df, ["Net Sales", "Gross Sales", "Sales Price", "Price"]
+        )
         self.c_qty = get_col(df, ["Quantity Dimenions", "Quantity Dimensions", "Quantity", "Qty", "Total Qty"])
         self.c_name = get_col(df, ["Full Name", "Employee Name", "Name", "Salespers."])
         self.c_cat = get_col(df, ["Z Customer Group", "Sales Type", "Customer Group"])

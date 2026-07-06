@@ -144,7 +144,7 @@ class AnalyticsService:
             rows.append({
                 "name": web_text(emp), "branch": web_text(branch),
                 "shift": web_text(shift), "top_type": web_text(top_cat),
-                "sales": self._d2(val / self.div),
+                "sales": round(float(val) / self.div, 2),
             })
         return rows
 

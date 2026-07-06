@@ -46,8 +46,16 @@ function isNumericCol(c) {
 }
 
 function fmt(n, decimals = 2) {
+    if (typeof n === 'string' && n.trim()) {
+        const pre = n.trim();
+        const parsed = parseNum(pre);
+        if (Number.isNaN(parsed) && !/^[\d,().+\s-]+$/.test(pre)) return pre;
+    }
     const v = typeof n === 'number' ? n : parseNum(n);
-    if (n == null || Number.isNaN(v)) return decimals === 0 ? '0' : '0.00';
+    if (Number.isNaN(v)) {
+        if (typeof n === 'string' && n.trim()) return n.trim();
+        return decimals === 0 ? '0' : '0.00';
+    }
     const s = Math.abs(v).toLocaleString(LOCALE, {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals,
@@ -308,7 +316,7 @@ function renderDashboard(data) {
 
     buildTableHeader('topEmpTable', STATIC_TABLES.topEmpTable);
     fillTable('topEmpTable', data.top_employees, (r, i) =>
-        `<tr>${rankCell(i + 1)}${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${arCell(r.top_type)}${numCell(displayNum('sales', r.sales))}</tr>`);
+        `<tr>${rankCell(i + 1)}${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${arCell(r.top_type)}${numCell(fmt(r.sales))}</tr>`);
 
     renderDynamicTable('empTable', data.employee_overview, true);
 

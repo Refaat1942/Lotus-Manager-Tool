@@ -99,6 +99,27 @@ def get_col(df, possible_names):
     return None
 
 
+def get_amount_col(df, possible_names):
+    """Pick the amount column with the largest absolute total (skips empty/zero-only columns)."""
+    df_cols_norm = {normalize_text(c): c for c in df.columns}
+    best_col = None
+    best_sum = -1.0
+    for name in possible_names:
+        norm_name = normalize_text(name)
+        if norm_name not in df_cols_norm:
+            continue
+        col = df_cols_norm[norm_name]
+        series = pd.to_numeric(
+            df[col].astype(str).str.replace(",", "", regex=False),
+            errors="coerce",
+        ).fillna(0.0)
+        total = float(series.abs().sum())
+        if total > best_sum:
+            best_sum = total
+            best_col = col
+    return best_col
+
+
 def xor_crypt(text, key):
     return "".join(chr(ord(c) ^ ord(key[i % len(key)])) for i, c in enumerate(text))
 

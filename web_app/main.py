@@ -20,7 +20,7 @@ from core.utils import decrypt_master_file
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
-APP_VERSION = os.environ.get("APP_VERSION", "20260706.8")
+APP_VERSION = os.environ.get("APP_VERSION", "20260706.9")
 app = FastAPI(title="Lotus Manager Tool Web")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "lotus-web-secret-change-me-2026"))
 
