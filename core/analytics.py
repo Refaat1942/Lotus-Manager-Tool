@@ -277,11 +277,56 @@ class AnalyticsService:
             avg_global = avg_rec.mean() if not avg_rec.empty else 0
             time_global = time_diff_series[time_diff_series > 0].mean() if not time_diff_series.empty else 0
             cat_sales = df.groupby([self.p.c_name, self.p.c_cat])[self.p.c_price].sum().unstack(fill_value=0) if self.p.c_cat else pd.DataFrame()
-            combined = pd.DataFrame({"Sales": emp_sales, "Avg": avg_rec, "Time": time_diff_series, "MatPerRec": items_per_rec, "Shift": main_shift, "WorkingDays": working_days}).sort_values("Sales", ascending=False)
+            combined = pd.DataFrame({
+                "Sales": emp_sales, "Avg": avg_rec, "Time": time_diff_series,
+                "MatPerRec": items_per_rec, "Shift": main_shift, "WorkingDays": working_days,
+            }).sort_values("Sales", ascending=False)
+            combined["SalesPerDay"] = combined["Sales"] / combined["WorkingDays"].clip(lower=1)
+            team_avg_spd = combined["SalesPerDay"].mean() if not combined.empty else 0
+            avg_wd = combined["WorkingDays"].mean() if not combined.empty else 0
+            period_days = max(1, self.p.period_info.get("days", 1))
+            spd_rank = combined["SalesPerDay"].rank(ascending=False, method="min")
             rows = []
             for i, (emp, row) in enumerate(combined.iterrows()):
                 tier = "Star Performer" if i < 3 else ("Solid Contributor" if i < len(combined) / 2 else "Needs Improvement")
                 recs = []
+                spd = row["SalesPerDay"]
+                wd = int(row["WorkingDays"])
+                shift = row["Shift"]
+                spd_val = round(spd / self.div, 0)
+                team_spd_val = round(team_avg_spd / self.div, 0)
+
+                if spd >= team_avg_spd * 1.15:
+                    recs.append(f"Strong daily output: {spd_val:,.0f} sales/working day (team avg {team_spd_val:,.0f}).")
+                elif spd < team_avg_spd * 0.8:
+                    recs.append(f"Below team sales/day ({spd_val:,.0f} vs avg {team_spd_val:,.0f}) — improve daily output.")
+
+                shift_peers = combined[combined["Shift"] == shift]
+                if len(shift_peers) > 1:
+                    best_emp = shift_peers["SalesPerDay"].idxmax()
+                    if emp == best_emp:
+                        recs.append(f"Top on {shift} shift by sales per working day.")
+                    else:
+                        best_spd = shift_peers.loc[best_emp, "SalesPerDay"]
+                        if best_spd > 0:
+                            pct_behind = (1 - spd / best_spd) * 100
+                            if pct_behind >= 10:
+                                recs.append(f"Behind {web_text(best_emp)} on {shift} by {pct_behind:.0f}% sales/day.")
+
+                rank_pos = int(spd_rank.get(emp, len(combined)))
+                if rank_pos == 1 and len(combined) > 1:
+                    recs.append("Best overall sales efficiency (sales per working day).")
+                elif rank_pos <= 3 and len(combined) >= 4:
+                    recs.append(f"Top 3 efficiency rank (#{rank_pos} by sales/working day).")
+
+                if wd < avg_wd * 0.75:
+                    if spd >= team_avg_spd:
+                        recs.append(f"Fewer working days ({wd}) but strong daily sales — high impact when present.")
+                    else:
+                        recs.append(f"Low attendance ({wd} days vs team avg {avg_wd:.0f}) — limits total sales.")
+                elif wd >= period_days * 0.85 and spd < team_avg_spd * 0.85:
+                    recs.append("High attendance but weak daily sales — needs coaching on shift productivity.")
+
                 if row["Avg"] >= avg_global * 1.1:
                     recs.append("Excellent basket value (Upselling effective).")
                 elif row["Avg"] < avg_global * 0.8:
@@ -294,9 +339,6 @@ class AnalyticsService:
                     recs.append("High idle time on Night Shift.")
                 elif row["Time"] > 0 and row["Time"] > time_global * 1.3:
                     recs.append("Processing is slow between receipts.")
-                period_days = max(1, self.p.period_info.get("days", 1))
-                if row["WorkingDays"] < period_days * 0.5:
-                    recs.append("Low working days in selected period.")
                 if not cat_sales.empty and emp in cat_sales.index:
                     e_cats = {str(k).lower(): v for k, v in cat_sales.loc[emp].items()}
                     cash = sum(v for k, v in e_cats.items() if "cash" in k or "نقدي" in k)
@@ -307,7 +349,7 @@ class AnalyticsService:
                     recs.append("Steady performance. Maintain consistent numbers.")
                 rows.append({
                     "employee": web_text(emp), "shift": web_text(row["Shift"]),
-                    "working_days": int(row["WorkingDays"]),
+                    "working_days": wd,
                     "tier": tier, "materials_per_receipt": round(row["MatPerRec"], 2),
                     "recommendation": " | ".join(recs),
                 })
