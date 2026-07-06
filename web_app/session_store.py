@@ -2,6 +2,7 @@ import io
 import pandas as pd
 from core.data_processor import DataProcessor
 from core.analytics import AnalyticsService
+from web_app.database import get_master_df
 
 _user_sessions = {}
 
@@ -72,6 +73,10 @@ def get_dashboard_data(user_id: int):
     emp_sales = ana.employee_performance("sales_types")
     emp_eff = ana.employee_performance("efficiency")
     dates = state["filter_options"].get("dates", [])
+    master_df = get_master_df()
+    deep_sales = None
+    if master_df is not None and not master_df.empty:
+        deep_sales = ana.deep_sales_analysis(master_df)
     return {
         "has_data": True,
         "kpis": kpis,
@@ -88,6 +93,7 @@ def get_dashboard_data(user_id: int):
         "employee_sales_types": emp_sales,
         "employee_efficiency": emp_eff,
         "executive": ana.executive_summary(),
+        "deep_sales": deep_sales,
         "filter_options": state["filter_options"],
         "filters": state["filters"],
         "daily_avg": state["daily_avg"],

@@ -556,30 +556,29 @@ class AnalyticsService:
         master_sub = master_df[["Material", "Description", "SubCat1", "SubCat2", "GranularCat"]].copy()
         master_sub["Description"] = master_sub["Description"].astype(str).str.strip()
         master_sub["Material"] = master_sub["Material"].astype(str).str.strip()
-        temp["_desc_key"] = temp[self.p.c_desc].astype(str).str.strip()
-        merged = temp.merge(
-            master_sub.drop_duplicates("Description"),
-            left_on="_desc_key",
-            right_on="Description",
-            how="left",
-        )
+        by_desc = master_sub.drop_duplicates("Description").set_index("Description")
+        by_code = master_sub.drop_duplicates("Material").set_index("Material")
+
+        desc_key = temp[self.p.c_desc].astype(str).str.strip()
+        temp["SubCat1"] = desc_key.map(by_desc["SubCat1"])
+        temp["SubCat2"] = desc_key.map(by_desc["SubCat2"])
+        temp["GranularCat"] = desc_key.map(by_desc["GranularCat"])
+
         if self.p.c_item_code:
-            temp["_code_key"] = temp[self.p.c_item_code].astype(str).str.strip()
-            code_map = master_sub.drop_duplicates("Material").set_index("Material")
-            missing = merged["SubCat1"].isna()
+            code_key = temp[self.p.c_item_code].astype(str).str.strip()
+            missing = temp["SubCat1"].isna()
             if missing.any():
-                codes = temp.loc[missing, "_code_key"]
-                merged.loc[missing, "SubCat1"] = codes.map(code_map["SubCat1"])
-                merged.loc[missing, "SubCat2"] = codes.map(code_map["SubCat2"])
-                merged.loc[missing, "GranularCat"] = codes.map(code_map["GranularCat"])
-                merged.loc[missing, "Description"] = codes.map(code_map["Description"])
-        merged["SubCat1"] = merged["SubCat1"].fillna("Uncategorized").astype(str).str.strip()
-        merged["SubCat2"] = merged["SubCat2"].fillna("Uncategorized").astype(str).str.strip()
-        merged["SalesType"] = (
-            merged[self.p.c_cat].astype(str).str.strip() if self.p.c_cat else "All Sales"
+                temp.loc[missing, "SubCat1"] = code_key[missing].map(by_code["SubCat1"])
+                temp.loc[missing, "SubCat2"] = code_key[missing].map(by_code["SubCat2"])
+                temp.loc[missing, "GranularCat"] = code_key[missing].map(by_code["GranularCat"])
+
+        temp["SubCat1"] = temp["SubCat1"].fillna("Uncategorized").astype(str).str.strip()
+        temp["SubCat2"] = temp["SubCat2"].fillna("Uncategorized").astype(str).str.strip()
+        temp["SalesType"] = (
+            temp[self.p.c_cat].astype(str).str.strip() if self.p.c_cat else "All Sales"
         )
-        merged = merged[merged[self.p.c_price] > 0]
-        return merged if not merged.empty else None
+        temp = temp[temp[self.p.c_price] > 0]
+        return temp if not temp.empty else None
 
     def _is_delivery_type(self, sales_type):
         s = str(sales_type).lower()
@@ -599,7 +598,7 @@ class AnalyticsService:
         g1 = g1[g1["sales_raw"] > 0].sort_values(["SalesType", "sales_raw"], ascending=[True, False])
         g1["rank"] = g1.groupby("SalesType").cumcount() + 1
         rows_type_cat = []
-        for _, r in g1.iterrows():
+        for _, r in g1[g1["rank"] <= 25].iterrows():
             pct = (r["sales_raw"] / r["type_total"] * 100) if r["type_total"] > 0 else 0
             rows_type_cat.append({
                 "sales_type": web_text(r["SalesType"]),
@@ -617,7 +616,7 @@ class AnalyticsService:
         g2 = g2[g2["sales_raw"] > 0].sort_values(["SubCat1", "sales_raw"], ascending=[True, False])
         g2["rank"] = g2.groupby("SubCat1").cumcount() + 1
         rows_cat_sub = []
-        for _, r in g2.iterrows():
+        for _, r in g2[g2["rank"] <= 25].iterrows():
             pct = (r["sales_raw"] / r["cat_total"] * 100) if r["cat_total"] > 0 else 0
             rows_cat_sub.append({
                 "category": web_text(r["SubCat1"]),
@@ -655,7 +654,7 @@ class AnalyticsService:
             g4["channel_total"] = g4.groupby("SalesType")["sales_raw"].transform("sum")
             g4 = g4[g4["sales_raw"] > 0].sort_values(["SalesType", "sales_raw"], ascending=[True, False])
             g4["rank"] = g4.groupby("SalesType").cumcount() + 1
-            for _, r in g4.iterrows():
+            for _, r in g4[g4["rank"] <= 25].iterrows():
                 pct = (r["sales_raw"] / r["channel_total"] * 100) if r["channel_total"] > 0 else 0
                 rows_delivery.append({
                     "sales_type": web_text(r["SalesType"]),

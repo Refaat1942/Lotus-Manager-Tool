@@ -151,7 +151,7 @@
 
             <div class="tab-panel" id="tab-deepsales">
                 <div class="compare-controls">
-                    <button id="loadDeepSales" class="btn btn-purple">{{ t('deep_refresh') }}</button>
+                    <button id="loadDeepSales" type="button" class="btn btn-purple" onclick="window.__runDeepSales && window.__runDeepSales(true)">{{ t('deep_refresh') }}</button>
                 </div>
                 <div id="deepSalesStatus" class="status-text"></div>
                 <div id="deepSalesInsights" class="brief-card hidden"></div>
@@ -230,4 +230,5 @@ window.TABLE_LABELS = {
 };
 </script>
 <script src="/static/js/dashboard.js?v={{ app_version }}"></script>
+<script src="/static/js/deep-sales.js?v={{ app_version }}"></script>
 {% endblock %}

@@ -323,6 +323,12 @@ function renderDashboard(data) {
     fillTable('execPharTable', ex.pharmacists, r =>
         `<tr>${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${numCell(displayNum('sales', r.sales))}${numCell(displayNum('receipts', r.receipts))}${numCell(displayNum('avg_receipt', r.avg_receipt))}${arCell(r.top_sales_type)}${arCell(r.top_category)}${arCell(r.evaluation)}</tr>`);
 
+    if (data.deep_sales) {
+        deepSalesCache = data.deep_sales;
+        if (window.__applyDeepSales) window.__applyDeepSales(data.deep_sales);
+    }
+    window.dispatchEvent(new CustomEvent('lotus-dashboard-updated', { detail: data }));
+
     if (validDates.length) {
         const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
         set('dcP1Start', validDates[0]);
@@ -388,7 +394,6 @@ async function applyLoadedOptions(options) {
 
 async function refreshDashboard() {
     const savedEmpMode = document.querySelector('.sub-tab[data-emode].active')?.dataset.emode || activeEmpMode || 'overview';
-    const deepTabActive = isDeepSalesTabActive();
     deepSalesCache = null;
     const res = await fetch('/api/filters', {
         method: 'POST',
@@ -411,7 +416,6 @@ async function refreshDashboard() {
         } else {
             activeEmpMode = 'overview';
         }
-        if (deepTabActive) await loadDeepSales(true);
     }
 }
 
@@ -521,7 +525,7 @@ document.getElementById('masterFile')?.addEventListener('change', async e => {
     document.getElementById('uploadStatus').textContent = data.ok ? `✓ Master: ${data.count} items` : '✗ ' + data.error;
     if (data.ok) {
         deepSalesCache = null;
-        if (isDeepSalesTabActive()) await loadDeepSales(true);
+        if (isDeepSalesTabActive() && window.__runDeepSales) await window.__runDeepSales(true);
     }
 });
 
@@ -538,7 +542,7 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-    if (tab.dataset.tab === 'deepsales') loadDeepSales(false);
+    if (tab.dataset.tab === 'deepsales' && window.__runDeepSales) window.__runDeepSales(false);
 }));
 
 let pendingSubcatMode = false;
@@ -652,15 +656,6 @@ async function loadDeepSales(force) {
         deepSalesLoading = false;
     }
 }
-
-document.getElementById('loadDeepSales')?.addEventListener('click', () => loadDeepSales(true));
-document.querySelectorAll('.deep-sub').forEach(tab => tab.addEventListener('click', () => {
-    document.querySelectorAll('.deep-sub').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    activeDeepMode = tab.dataset.dmode;
-    if (deepSalesCache?.ok) renderDeepSalesMode(activeDeepMode);
-    else loadDeepSales(false);
-}));
 
 document.getElementById('runDateCompare')?.addEventListener('click', runDateCompare);
 document.getElementById('trendFile')?.addEventListener('change', e => { if (e.target.files[0]) loadTrendCompare(e.target.files[0]); });
