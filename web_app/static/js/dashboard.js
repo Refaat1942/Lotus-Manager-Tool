@@ -441,7 +441,7 @@ async function loadTrendCompare(file) {
         }).join('')}</div>`;
     buildTableHeader('trendTable', STATIC_TABLES.trendTable);
     fillTable('trendTable', d.rows, r =>
-        `<tr>${arCell(r.employee)}${numCell(fmt(r.prev_sales))}${numCell(fmt(r.curr_sales))}${numCell(r.sales_delta)}${numCell(formatCellValue('prev_recs', r.prev_recs))}${numCell(formatCellValue('curr_recs', r.curr_recs))}${numCell(fmt(r.prev_avg))}${numCell(fmt(r.curr_avg))}${numCell(r.avg_delta)}${arCell(r.insight)}</tr>`);
+        `<tr>${arCell(r.employee)}${numCell(fmt(r.prev_sales))}${numCell(fmt(r.curr_sales))}${numCell(fmtDelta(r.sales_delta))}${numCell(formatCellValue('prev_recs', r.prev_recs))}${numCell(formatCellValue('curr_recs', r.curr_recs))}${numCell(fmt(r.prev_avg))}${numCell(fmt(r.curr_avg))}${numCell(fmtDelta(r.avg_delta))}${arCell(r.insight)}</tr>`);
 }
 
 async function exportTable(tableId, sheetName) {
