@@ -26,6 +26,11 @@ const EMP_MODES = {
 const LOCALE = 'en-US';
 const INT_COLS = new Set(['working_days', 'hour', 'rank', 'alt_qty', 'stagnant_code', 'code']);
 const COUNT_COLS = new Set(['receipts', 'prev_recs', 'curr_recs', 'materials', 'qty']);
+const NUMERIC_COLS = new Set([
+    'sales', 'avg', 'avg_receipt', 'materials_per_receipt', 'total_materials',
+    'working_days', 'receipts', 'qty', 'materials', 'p1_sales', 'p2_sales',
+    'prev_sales', 'curr_sales', 'prev_recs', 'curr_recs', 'prev_avg', 'curr_avg', 'alt_qty',
+]);
 
 function parseNum(s) {
     const t = String(s ?? '').trim();
@@ -35,8 +40,12 @@ function parseNum(s) {
     return neg ? -n : n;
 }
 
+function isNumericCol(c) {
+    return NUMERIC_COLS.has(c) || (c && c.startsWith('cat_'));
+}
+
 function fmt(n, decimals = 2) {
-    const v = Number(n);
+    const v = typeof n === 'number' ? n : parseNum(n);
     if (n == null || Number.isNaN(v)) return decimals === 0 ? '0' : '0.00';
     const s = Math.abs(v).toLocaleString(LOCALE, {
         minimumFractionDigits: decimals,
@@ -71,7 +80,7 @@ function formatInlineNumbers(text) {
 }
 
 function fmtPct(n) {
-    const v = Number(n);
+    const v = typeof n === 'number' ? n : parseNum(n);
     if (Number.isNaN(v)) return String(n);
     const sign = v > 0 ? '+' : '';
     return `${sign}${fmt(v, 1)}%`;
@@ -108,16 +117,19 @@ function tierCell(v) {
 function dataCell(c, v, row) {
     if (c === 'recommendation') return aiRecCell(v, row);
     if (c === 'tier') return tierCell(v);
-    if (c === 'sales_delta' || c === 'avg_delta') {
-        const s = String(v ?? '');
-        if (s.includes('%')) return numCell(s);
-        const n = parseNum(s);
-        return numCell(Number.isNaN(n) ? s : fmtPct(n));
-    }
-    if (typeof v === 'number' || /^[\d,.()+-]+$/.test(String(v).trim())) {
+    if (c === 'sales_delta' || c === 'avg_delta') return numCell(fmtDelta(v));
+    if (isNumericCol(c) || typeof v === 'number') {
         return numCell(formatCellValue(c, v));
     }
+    const n = parseNum(v);
+    if (!Number.isNaN(n) && /^[\d,().+\s-]+$/.test(String(v).trim())) {
+        return numCell(formatCellValue(c, n));
+    }
     return arCell(v);
+}
+
+function displayNum(col, v) {
+    return formatCellValue(col, v);
 }
 
 function buildTableHeader(tableId, columnKeys, customLabels) {
@@ -294,20 +306,20 @@ function renderDashboard(data) {
 
     buildTableHeader('topEmpTable', STATIC_TABLES.topEmpTable);
     fillTable('topEmpTable', data.top_employees, (r, i) =>
-        `<tr>${rankCell(i + 1)}${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${arCell(r.top_type)}${numCell(fmt(r.sales))}</tr>`);
+        `<tr>${rankCell(i + 1)}${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${arCell(r.top_type)}${numCell(displayNum('sales', r.sales))}</tr>`);
 
     renderDynamicTable('empTable', data.employee_overview, true);
 
     fillTable('prodTable', data.top_products, r =>
-        `<tr>${numCell(r.code)}${arCell(r.description)}${arCell(r.category)}${arCell(r.material_group)}${numCell(fmt(r.qty))}${numCell(fmt(r.sales))}</tr>`);
+        `<tr>${numCell(r.code)}${arCell(r.description)}${arCell(r.category)}${arCell(r.material_group)}${numCell(displayNum('qty', r.qty))}${numCell(displayNum('sales', r.sales))}</tr>`);
 
     const ex = data.executive;
     document.getElementById('execBrief').innerHTML =
         `<strong>⭐ Top Shift:</strong> <span dir="auto">${esc(ex.best_shift)}</span><br><strong>🔥 Peak Hours:</strong> ${esc((ex.peak_hours || []).join(' & ') || 'N/A')}`;
     fillTable('execShiftTable', ex.shifts_by_branch, r =>
-        `<tr>${arCell(r.branch)}${arCell(r.shift)}${numCell(fmt(r.sales))}${numCell(formatCellValue('receipts', r.receipts))}${numCell(fmt(r.avg_receipt))}</tr>`);
+        `<tr>${arCell(r.branch)}${arCell(r.shift)}${numCell(displayNum('sales', r.sales))}${numCell(displayNum('receipts', r.receipts))}${numCell(displayNum('avg_receipt', r.avg_receipt))}</tr>`);
     fillTable('execPharTable', ex.pharmacists, r =>
-        `<tr>${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${numCell(fmt(r.sales))}${numCell(formatCellValue('receipts', r.receipts))}${numCell(fmt(r.avg_receipt))}${arCell(r.top_sales_type)}${arCell(r.top_category)}${arCell(r.evaluation)}</tr>`);
+        `<tr>${arCell(r.name)}${arCell(r.branch)}${arCell(r.shift)}${numCell(displayNum('sales', r.sales))}${numCell(displayNum('receipts', r.receipts))}${numCell(displayNum('avg_receipt', r.avg_receipt))}${arCell(r.top_sales_type)}${arCell(r.top_category)}${arCell(r.evaluation)}</tr>`);
 
     if (validDates.length) {
         const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
@@ -422,7 +434,7 @@ async function runDateCompare() {
     drawDualChart('chartDateCompare', data.chart.labels, data.chart.p1, data.chart.p2);
     buildTableHeader('dateHourlyTable', STATIC_TABLES.dateHourlyTable);
     fillTable('dateHourlyTable', data.rows, r =>
-        `<tr>${numCell(r.hour)}${numCell(fmt(r.p1_sales))}${numCell(fmt(r.p2_sales))}${numCell(typeof r.variance === 'string' && r.variance.includes('%') ? r.variance : fmtPct(parseNum(r.variance)))}</tr>`);
+        `<tr>${numCell(r.hour)}${numCell(displayNum('p1_sales', r.p1_sales))}${numCell(displayNum('p2_sales', r.p2_sales))}${numCell(fmtDelta(r.variance))}</tr>`);
 }
 
 async function loadTrendCompare(file) {
@@ -441,7 +453,7 @@ async function loadTrendCompare(file) {
         }).join('')}</div>`;
     buildTableHeader('trendTable', STATIC_TABLES.trendTable);
     fillTable('trendTable', d.rows, r =>
-        `<tr>${arCell(r.employee)}${numCell(fmt(r.prev_sales))}${numCell(fmt(r.curr_sales))}${numCell(fmtDelta(r.sales_delta))}${numCell(formatCellValue('prev_recs', r.prev_recs))}${numCell(formatCellValue('curr_recs', r.curr_recs))}${numCell(fmt(r.prev_avg))}${numCell(fmt(r.curr_avg))}${numCell(fmtDelta(r.avg_delta))}${arCell(r.insight)}</tr>`);
+        `<tr>${arCell(r.employee)}${numCell(displayNum('prev_sales', r.prev_sales))}${numCell(displayNum('curr_sales', r.curr_sales))}${numCell(fmtDelta(r.sales_delta))}${numCell(displayNum('prev_recs', r.prev_recs))}${numCell(displayNum('curr_recs', r.curr_recs))}${numCell(displayNum('prev_avg', r.prev_avg))}${numCell(displayNum('curr_avg', r.curr_avg))}${numCell(fmtDelta(r.avg_delta))}${arCell(r.insight)}</tr>`);
 }
 
 async function exportTable(tableId, sheetName) {
@@ -546,7 +558,7 @@ document.getElementById('analyzeStagnant')?.addEventListener('click', async () =
     const data = await res.json();
     buildTableHeader('stagTable', STATIC_TABLES.stagTable);
     fillTable('stagTable', data.rows, r =>
-        `<tr>${numCell(r.stagnant_code)}${arCell(r.stagnant_drug)}${numCell(r.alt_code)}${arCell(r.alt_drug)}${numCell(formatCellValue('alt_qty', r.alt_qty))}${arCell(r.group_match)}</tr>`);
+        `<tr>${numCell(r.stagnant_code)}${arCell(r.stagnant_drug)}${numCell(r.alt_code)}${arCell(r.alt_drug)}${numCell(displayNum('alt_qty', r.alt_qty))}${arCell(r.group_match)}</tr>`);
 });
 
 document.getElementById('runDateCompare')?.addEventListener('click', runDateCompare);

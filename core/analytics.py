@@ -17,6 +17,19 @@ class AnalyticsService:
     def _fmt_rec(self, x):
         return round(x / self.div, 1) if self._daily else int(x)
 
+    def _d0(self, val):
+        return format_int(val)
+
+    def _d1(self, val):
+        return format_number(val, 1)
+
+    def _d2(self, val):
+        return format_number(val, 2)
+
+    def _d_rec(self, val):
+        v = self._fmt_rec(val)
+        return self._d1(v) if self._daily else self._d0(v)
+
     def _emp_metrics(self):
         df = self.p.df
         grp = df.groupby(self.p.c_name)
@@ -131,7 +144,7 @@ class AnalyticsService:
             rows.append({
                 "name": web_text(emp), "branch": web_text(branch),
                 "shift": web_text(shift), "top_type": web_text(top_cat),
-                "sales": round(val / self.div, 2),
+                "sales": self._d2(val / self.div),
             })
         return rows
 
@@ -155,8 +168,8 @@ class AnalyticsService:
                 "description": web_text(row[self.p.c_desc]),
                 "category": web_text(row[self.p.c_cat]) if self.p.c_cat else "N/A",
                 "material_group": web_text(row["Item_Type"]) if "Item_Type" in row else "N/A",
-                "qty": round(row[self.p.c_qty] / self.div, 2),
-                "sales": round(row[self.p.c_price] / self.div, 2),
+                "qty": self._d2(row[self.p.c_qty] / self.div),
+                "sales": self._d2(row[self.p.c_price] / self.div),
             })
         return rows
 
@@ -180,11 +193,11 @@ class AnalyticsService:
                 rows.append({
                     "employee": web_text(emp), "position": pos,
                     "shift": web_text(main_shift.get(emp, "")),
-                    "working_days": int(working_days.get(emp, 0)),
-                    "sales": round(row / self.div, 2),
-                    "receipts": self._fmt_rec(emp_rec.get(emp, 0)),
-                    "avg_receipt": round(avg_rec.get(emp, 0), 2),
-                    "materials_per_receipt": round(items_per_rec.get(emp, 0), 2),
+                    "working_days": self._d0(working_days.get(emp, 0)),
+                    "sales": self._d2(row / self.div),
+                    "receipts": self._d_rec(emp_rec.get(emp, 0)),
+                    "avg_receipt": self._d2(avg_rec.get(emp, 0)),
+                    "materials_per_receipt": self._d2(items_per_rec.get(emp, 0)),
                 })
             return {"columns": ["employee", "position", "shift", "working_days", "sales", "receipts", "avg_receipt", "materials_per_receipt"], "rows": rows}
 
@@ -199,13 +212,13 @@ class AnalyticsService:
             for emp, row in combined.iterrows():
                 r = {
                     "employee": web_text(emp), "shift": web_text(row["Shift"]),
-                    "working_days": int(row["WorkingDays"]),
-                    "receipts": self._fmt_rec(row["Recs"]),
-                    "sales": round(row["Sales"] / self.div, 2),
-                    "materials_per_receipt": round(row["MatPerRec"], 2),
+                    "working_days": self._d0(row["WorkingDays"]),
+                    "receipts": self._d_rec(row["Recs"]),
+                    "sales": self._d2(row["Sales"] / self.div),
+                    "materials_per_receipt": self._d2(row["MatPerRec"]),
                 }
                 for i, c in enumerate(cat_sales.columns):
-                    r[f"cat_{i}"] = round(row[c] / self.div, 2)
+                    r[f"cat_{i}"] = self._d2(row[c] / self.div)
                 rows.append(r)
             cols = ["employee", "shift", "working_days", "receipts", "sales", "materials_per_receipt"] + [f"cat_{i}" for i in range(len(sale_types))]
             base_labels = ["employee", "shift", "working_days", "receipts", "sales", "materials_per_receipt"]
@@ -237,10 +250,10 @@ class AnalyticsService:
                     "employee": web_text(row[self.p.c_name]),
                     "subcat1": web_text(row["SubCat1"]),
                     "subcat2": web_text(row["SubCat2"]),
-                    "sales": round(row[self.p.c_price] / self.div, 2),
+                    "sales": self._d2(row[self.p.c_price] / self.div),
                     "sales_pct": f"{pct:.1f} %",
-                    "materials": round(row[self.p.c_qty] / self.div, 1) if self._daily else int(row[self.p.c_qty]),
-                    "receipts": self._fmt_rec(row[rec_col]) if rec_col and rec_col in row.index else "N/A",
+                    "materials": self._d1(row[self.p.c_qty] / self.div) if self._daily else self._d0(row[self.p.c_qty]),
+                    "receipts": self._d_rec(row[rec_col]) if rec_col and rec_col in row.index else "N/A",
                 })
             return {"columns": ["employee", "subcat1", "subcat2", "sales", "sales_pct", "materials", "receipts"], "rows": rows}
 
@@ -255,19 +268,19 @@ class AnalyticsService:
             for emp, row in combined.iterrows():
                 rows.append({
                     "employee": web_text(emp), "shift": web_text(row["Shift"]),
-                    "working_days": int(row["WorkingDays"]),
-                    "receipts": self._fmt_rec(row["Recs"]),
-                    "avg_receipt": round(row["Avg"], 2),
-                    "materials_per_receipt": round(row["MatPerRec"], 2),
-                    "total_materials": round(row["Items"] / self.div, 2),
+                    "working_days": self._d0(row["WorkingDays"]),
+                    "receipts": self._d_rec(row["Recs"]),
+                    "avg_receipt": self._d2(row["Avg"]),
+                    "materials_per_receipt": self._d2(row["MatPerRec"]),
+                    "total_materials": self._d2(row["Items"] / self.div),
                     "avg_mins": f"{row['Time']} mins" if row["Time"] > 0 else "N/A",
                 })
             rows.append({
                 "employee": "📊 SUBTOTAL / AVG", "shift": "---", "working_days": "---",
-                "receipts": self._fmt_rec(emp_rec.sum()),
-                "avg_receipt": round(m["sys_avg_rec"], 2),
-                "materials_per_receipt": round(m["sys_avg_mat"], 2),
-                "total_materials": round(items_sold.sum() / self.div, 2),
+                "receipts": self._d_rec(emp_rec.sum()),
+                "avg_receipt": self._d2(m["sys_avg_rec"]),
+                "materials_per_receipt": self._d2(m["sys_avg_mat"]),
+                "total_materials": self._d2(items_sold.sum() / self.div),
                 "avg_mins": f"{avg_time_global:.1f} mins" if avg_time_global > 0 else "N/A",
                 "is_subtotal": True,
             })
@@ -347,8 +360,8 @@ class AnalyticsService:
                     recs = ["Steady performance — maintain consistency"]
                 rows.append({
                     "employee": web_text(emp), "shift": web_text(row["Shift"]),
-                    "working_days": wd,
-                    "tier": tier, "materials_per_receipt": round(row["MatPerRec"], 2),
+                    "working_days": self._d0(wd),
+                    "tier": tier, "materials_per_receipt": self._d2(row["MatPerRec"]),
                     "recommendations": recs,
                     "recommendation": " | ".join(recs),
                 })
@@ -383,9 +396,9 @@ class AnalyticsService:
                 result["shifts_by_branch"].append({
                     "branch": web_text(row[self.p.c_branch]),
                     "shift": web_text(row["Shift_Name"]),
-                    "sales": round(row[self.p.c_price] / self.div, 2),
-                    "receipts": self._fmt_rec(row[rec_col]),
-                    "avg_receipt": round(row[self.p.c_price] / recs, 2),
+                    "sales": self._d2(row[self.p.c_price] / self.div),
+                    "receipts": self._d_rec(row[rec_col]),
+                    "avg_receipt": self._d2(row[self.p.c_price] / recs),
                 })
         emp_grp = df.groupby(self.p.c_name).agg({self.p.c_price: "sum", rec_col: "nunique"})
         emp_grp["AvgRec"] = emp_grp[self.p.c_price] / emp_grp[rec_col].replace(0, 1)
@@ -416,8 +429,8 @@ class AnalyticsService:
             result["pharmacists"].append({
                 "name": web_text(emp), "branch": web_text(emp_branch.get(emp, "Unknown")),
                 "shift": web_text(emp_shift.get(emp, "Unknown")),
-                "sales": round(s / self.div, 2), "receipts": self._fmt_rec(r),
-                "avg_receipt": round(a, 2),
+                "sales": self._d2(s / self.div), "receipts": self._d_rec(r),
+                "avg_receipt": self._d2(a),
                 "top_sales_type": web_text(top_sales_type.get(emp, "N/A")),
                 "top_category": web_text(top_item_type.get(emp, "N/A")),
                 "evaluation": ev,
@@ -458,7 +471,7 @@ class AnalyticsService:
             diff_pct = ((v2 - v1) / v1 * 100) if v1 > 0 else (100 if v2 > 0 else 0)
             rows.append({
                 "hour": f"{hour:02d}:00 - {hour+1:02d}:00",
-                "p1_sales": round(v1, 2), "p2_sales": round(v2, 2),
+                "p1_sales": self._d2(v1), "p2_sales": self._d2(v2),
                 "variance": f"{'+' if diff_pct > 0 else ''}{diff_pct:.1f}%",
             })
             chart_labels.append(f"{hour:02d}:00")
@@ -511,10 +524,10 @@ class AnalyticsService:
                 insight = "⚪ Stable Performance."
             rows.append({
                 "employee": web_text(emp),
-                "prev_sales": round(s_prev, 0), "curr_sales": round(s_curr, 0),
+                "prev_sales": self._d0(s_prev), "curr_sales": self._d0(s_curr),
                 "sales_delta": f"{sales_pct:.1f}%",
-                "prev_recs": round(r_prev, 0), "curr_recs": round(r_curr, 0),
-                "prev_avg": round(a_prev, 0), "curr_avg": round(a_curr, 0),
+                "prev_recs": self._d0(r_prev), "curr_recs": self._d0(r_curr),
+                "prev_avg": self._d0(a_prev), "curr_avg": self._d0(a_curr),
                 "avg_delta": f"{avg_pct:.1f}%", "insight": insight,
             })
         return {
@@ -551,7 +564,7 @@ class AnalyticsService:
                     "stagnant_drug": web_text(row["Description"]),
                     "alt_code": clean_item_code(top_seller["Material"]),
                     "alt_drug": web_text(top_seller["Description"]),
-                    "alt_qty": int(top_seller["Qty_Sold"]),
+                    "alt_qty": self._d0(top_seller["Qty_Sold"]),
                     "group_match": web_text(f"{cat1} -> {granular}"),
                 })
         return rows
